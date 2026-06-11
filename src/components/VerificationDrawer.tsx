@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { X, Check, ShieldCheck, ShieldAlert, FileWarning, Eye } from "lucide-react";
 import { Project } from "../types";
 import { verifyCompliance } from "../complianceEngine";
+import { formatUSD } from "../utils/currency";
 
 interface VerificationDrawerProps {
   isOpen: boolean;
@@ -27,8 +28,18 @@ interface VerificationDrawerProps {
     file_name: string;
     simulated: boolean;
     warning?: string;
+    extraction_method?: "AI_Scan" | "Manual_Entry";
+    custom_extractions?: Record<string, number | null>;
   } | null;
-  onSave: (manualOverride: boolean, notes: string, status: "Compliant" | "Insufficient Coverage" | "Expired") => Promise<void>;
+  onSave: (
+    manualOverride: boolean,
+    notes: string,
+    status: "Compliant" | "Insufficient Coverage" | "Expired" | "Approved Exception",
+    waiverReasonType: "Low Contract Value" | "Low-Risk Scope" | "Executive Discretion" | "Temporary Extension" | null,
+    waiverAuthorizedBy: string | null,
+    waiverExpirationDate: string | null,
+    updatedPayload?: any
+  ) => Promise<void>;
 }
 
 export default function VerificationDrawer({
@@ -43,30 +54,82 @@ export default function VerificationDrawer({
 }: VerificationDrawerProps) {
   const [override, setOverride] = useState(false);
   const [overrideNotes, setOverrideNotes] = useState("");
+  const [waiverReasonType, setWaiverReasonType] = useState<"Low Contract Value" | "Low-Risk Scope" | "Executive Discretion" | "Temporary Extension" | "">("");
+  const [waiverAuthorizedBy, setWaiverAuthorizedBy] = useState("");
+  const [waiverExpirationDate, setWaiverExpirationDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Maintain local state representing editable payload if Manual Mode is active or during edit
+  const [formData, setFormData] = useState<{
+    insured_name: string;
+    gl_each_occurrence: number;
+    gl_general_aggregate: number;
+    auto_combined_single_limit: number;
+    workers_comp_statutory: boolean;
+    policy_expiration_date: string;
+    gl_products_completed?: number;
+    umbrella_limit?: number;
+    employers_liability_accident?: number;
+    employers_liability_disease_person?: number;
+    employers_liability_disease_limit?: number;
+    professional_liability?: number;
+    pollution_liability?: number;
+    file_name: string;
+    simulated: boolean;
+    warning?: string;
+    extraction_method?: "AI_Scan" | "Manual_Entry";
+    custom_extractions?: Record<string, number | null>;
+  } | null>(null);
 
   // Auto reset state on open
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && extractedData) {
       setOverride(false);
       setOverrideNotes("");
+      setWaiverReasonType("");
+      setWaiverAuthorizedBy("");
+      setWaiverExpirationDate("");
+
+      setFormData({
+        insured_name: extractedData.insured_name || "",
+        gl_each_occurrence: extractedData.gl_each_occurrence || 0,
+        gl_general_aggregate: extractedData.gl_general_aggregate || 0,
+        auto_combined_single_limit: extractedData.auto_combined_single_limit || 0,
+        workers_comp_statutory: !!extractedData.workers_comp_statutory,
+        policy_expiration_date: extractedData.policy_expiration_date || "2026-06-11",
+        gl_products_completed: extractedData.gl_products_completed || 0,
+        umbrella_limit: extractedData.umbrella_limit || 0,
+        employers_liability_accident: extractedData.employers_liability_accident || 0,
+        employers_liability_disease_person: extractedData.employers_liability_disease_person || 0,
+        employers_liability_disease_limit: extractedData.employers_liability_disease_limit || 0,
+        professional_liability: extractedData.professional_liability || 0,
+        pollution_liability: extractedData.pollution_liability || 0,
+        file_name: extractedData.file_name || "",
+        simulated: !!extractedData.simulated,
+        warning: extractedData.warning,
+        extraction_method: extractedData.extraction_method || "AI_Scan",
+        custom_extractions: extractedData.custom_extractions || {},
+      });
     }
-  }, [isOpen]);
+  }, [isOpen, extractedData]);
 
-  if (!isOpen || !extractedData) return null;
+  if (!isOpen || !extractedData || !formData) return null;
 
-  // Run compliance analysis engine
+  // Use the reactive formData as the principal activeData
+  const activeData = formData;
+
+  // Run compliance analysis engine Reactively
   const req = project.requirements;
   const trade = subContractorTrade || "Other Trades";
-  const analysis = verifyCompliance(project, extractedData, trade);
+  const analysis = verifyCompliance(project, activeData, trade);
 
-  // Compare each field to see if it meets threshold
-  const isGlOccPassed = extractedData.gl_each_occurrence >= req.gl_occurrence;
-  const isGlAggPassed = extractedData.gl_general_aggregate >= req.gl_aggregate;
-  const isAutoPassed = extractedData.auto_combined_single_limit >= req.auto_limit;
-  const isWcPassed = !req.workers_comp || extractedData.workers_comp_statutory;
+  // Compare each field to see if it meets threshold reactively
+  const isGlOccPassed = activeData.gl_each_occurrence >= req.gl_occurrence;
+  const isGlAggPassed = activeData.gl_general_aggregate >= req.gl_aggregate;
+  const isAutoPassed = activeData.auto_combined_single_limit >= req.auto_limit;
+  const isWcPassed = !req.workers_comp || activeData.workers_comp_statutory;
 
-  const isGlProdPassed = (extractedData.gl_products_completed ?? 0) >= (req.gl_products_completed ?? 2000000);
+  const isGlProdPassed = (activeData.gl_products_completed ?? 0) >= (req.gl_products_completed ?? 2000000);
 
   // Umbrella variable trade-specific calculation
   let requiredUmbrella = req.umbrella_limit ?? 1000000;
@@ -80,34 +143,42 @@ export default function VerificationDrawer({
   } else if (["Surveying", "Pool", "Other Trades"].includes(trade)) {
     requiredUmbrella = 1000000;
   }
-  const isUmbrellaPassed = (extractedData.umbrella_limit ?? 0) >= requiredUmbrella;
+  const isUmbrellaPassed = (activeData.umbrella_limit ?? 0) >= requiredUmbrella;
 
-  const isElAccidentPassed = (extractedData.employers_liability_accident ?? 0) >= (req.employers_liability_accident ?? 1000000);
-  const isElDiseasePersonPassed = (extractedData.employers_liability_disease_person ?? 0) >= (req.employers_liability_disease_person ?? 1000000);
-  const isElDiseaseLimitPassed = (extractedData.employers_liability_disease_limit ?? 0) >= (req.employers_liability_disease_limit ?? 1000000);
+  const isElAccidentPassed = (activeData.employers_liability_accident ?? 0) >= (req.employers_liability_accident ?? 1000000);
+  const isElDiseasePersonPassed = (activeData.employers_liability_disease_person ?? 0) >= (req.employers_liability_disease_person ?? 1000000);
+  const isElDiseaseLimitPassed = (activeData.employers_liability_disease_limit ?? 0) >= (req.employers_liability_disease_limit ?? 1000000);
 
   const professionalTrades = ["Environmental", "Surveying", "Earthwork", "Pool", "Fire Sprinkler", "Plumbing", "HVAC", "Electrical"];
   const isProfessionalRequired = professionalTrades.includes(trade);
-  const isProfessionalPassed = (extractedData.professional_liability ?? 0) >= 2000000;
+  const isProfessionalPassed = (activeData.professional_liability ?? 0) >= 2000000;
 
   const pollutionTrades = [
     "Environmental", "Earthwork", "Concrete (Precast)", "Concrete (Standard)", "Masonry",
     "Rough Carpentry (Standard)", "Siding", "Roofing", "Windows", "Drywall", "Plumbing", "HVAC"
   ];
   const isPollutionRequired = pollutionTrades.includes(trade);
-  const isPollutionPassed = (extractedData.pollution_liability ?? 0) >= 2000000;
+  const isPollutionPassed = (activeData.pollution_liability ?? 0) >= 2000000;
 
   const currentYearDateStr = "2026-06-11";
-  const isNotExpired = new Date(extractedData.policy_expiration_date) > new Date(currentYearDateStr);
+  const isNotExpired = new Date(activeData.policy_expiration_date) > new Date(currentYearDateStr);
 
   const finalStatus = override 
-    ? "Compliant" 
+    ? "Approved Exception" 
     : analysis.status === "Pending Upload" ? "Insufficient Coverage" : analysis.status;
 
   const handleApplyResolution = async () => {
     try {
       setSubmitting(true);
-      await onSave(override, overrideNotes, finalStatus as any);
+      await onSave(
+        override,
+        override ? overrideNotes : "",
+        finalStatus as any,
+        override ? (waiverReasonType || null) : null,
+        override ? (waiverAuthorizedBy || null) : null,
+        override ? (waiverExpirationDate || null) : null,
+        activeData
+      );
       onClose();
     } catch (err) {
       alert("Failed to apply compliance update.");
@@ -115,6 +186,8 @@ export default function VerificationDrawer({
       setSubmitting(false);
     }
   };
+
+  const isManualMode = activeData.extraction_method === "Manual_Entry";
 
   return (
     <div id="verification-overlay-backdrop" className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex justify-end transition-all select-none">
@@ -127,10 +200,12 @@ export default function VerificationDrawer({
               Verification Compliance Matrix
             </span>
             <h2 id="verification-title" className="text-xs font-bold text-slate-900 tracking-tight font-display mt-1.5 uppercase">
-              Reviewing COI: {subContractorName}
+              Reviewing COI: {subContractorName} {isManualMode && "(Manual entry)"}
             </h2>
             <p className="text-[11px] text-slate-500">
-              Comparing extracted facts from standard ACORD 25 for {project.name}.
+              {isManualMode
+                ? "Input details manually from your subcontractor insurance documentation."
+                : `Comparing extracted facts from standard ACORD 25 for ${project.name}.`}
             </p>
           </div>
           <button
@@ -144,8 +219,19 @@ export default function VerificationDrawer({
 
         {/* Content Body */}
         <div id="verification-body" className="p-4 flex-1 overflow-y-auto space-y-4">
-          {/* Simulation warnings if no real API key is running */}
-          {extractedData.simulated && (
+          
+          {/* Manual Entry Distinctive Visual Banner */}
+          {isManualMode && (
+            <div id="manual-entry-banner" className="text-slate-800 bg-amber-50 border border-amber-200 p-3 rounded-lg flex items-start space-x-2 text-xs">
+              <span className="text-base flex-shrink-0">📝</span>
+              <div className="font-semibold">
+                Manual Entry Mode Active — Cross-reference your hardcopy certificate to populate the fields below.
+              </div>
+            </div>
+          )}
+
+          {/* Simulation warnings if no real API key is running (Only in AI Scan mode) */}
+          {!isManualMode && activeData.simulated && (
             <div id="simulation-banner" className="bg-amber-50 border border-amber-200 text-amber-850 p-3 rounded-lg flex items-start space-x-2 text-xs">
               <FileWarning className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
               <div>
@@ -171,6 +257,7 @@ export default function VerificationDrawer({
 
             {/* Line items */}
             <div className="space-y-1.5">
+              
               {/* Insured Name */}
               <div id="match-row-insured" className="grid grid-cols-12 gap-2 items-center p-2.5 rounded bg-slate-50 border border-slate-200">
                 <div className="col-span-5">
@@ -178,8 +265,21 @@ export default function VerificationDrawer({
                   <p className="text-[10px] text-slate-500">Must match registered trade vendor</p>
                 </div>
                 <div className="col-span-6 text-right break-all">
-                  <p className="text-xs font-mono font-bold text-blue-600">{extractedData.insured_name}</p>
-                  <p className="text-[10px] text-slate-400">Registry name: {subContractorName}</p>
+                  {isManualMode ? (
+                    <input
+                      type="text"
+                      id="input-insured-name"
+                      placeholder="Enter Insured Company Name"
+                      value={activeData.insured_name}
+                      onChange={(e) => setFormData({ ...activeData, insured_name: e.target.value })}
+                      className="w-full text-xs font-mono font-bold text-blue-600 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  ) : (
+                    <>
+                      <p className="text-xs font-mono font-bold text-blue-600">{activeData.insured_name}</p>
+                      <p className="text-[10px] text-slate-400">Registry name: {subContractorName}</p>
+                    </>
+                  )}
                 </div>
                 <div className="col-span-1 flex justify-center">
                   <Check className="h-4 w-4 text-emerald-600" />
@@ -197,13 +297,24 @@ export default function VerificationDrawer({
                   <p className="text-xs font-bold text-slate-800">GL Each Occurrence Limit</p>
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className={`text-xs font-mono font-bold ${isGlOccPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                    ${extractedData.gl_each_occurrence.toLocaleString()}
-                  </p>
+                  {isManualMode ? (
+                    <input
+                      type="number"
+                      id="input-gl-occurrence"
+                      value={activeData.gl_each_occurrence === 0 ? "" : activeData.gl_each_occurrence}
+                      onChange={(e) => setFormData({ ...activeData, gl_each_occurrence: Number(e.target.value) })}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                  ) : (
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isGlOccPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                      {formatUSD(activeData.gl_each_occurrence)}
+                    </p>
+                  )}
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className="text-xs font-mono text-slate-500">
-                    ${req.gl_occurrence.toLocaleString()}
+                  <p className="text-xs font-mono text-slate-500 tracking-tight tabular-nums">
+                    {formatUSD(req.gl_occurrence)}
                   </p>
                 </div>
                 <div className="col-span-1 flex justify-center">
@@ -226,20 +337,31 @@ export default function VerificationDrawer({
                   <p className="text-xs font-bold text-slate-800">GL General Aggregate Limit</p>
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className={`text-xs font-mono font-bold ${isGlAggPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                    ${extractedData.gl_general_aggregate.toLocaleString()}
-                  </p>
+                  {isManualMode ? (
+                    <input
+                      type="number"
+                      id="input-gl-aggregate"
+                      value={activeData.gl_general_aggregate === 0 ? "" : activeData.gl_general_aggregate}
+                      onChange={(e) => setFormData({ ...activeData, gl_general_aggregate: Number(e.target.value) })}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                  ) : (
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isGlAggPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                      {formatUSD(activeData.gl_general_aggregate)}
+                    </p>
+                  )}
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className="text-xs font-mono text-slate-500">
-                    ${req.gl_aggregate.toLocaleString()}
+                  <p className="text-xs font-mono text-slate-500 tracking-tight tabular-nums">
+                    {formatUSD(req.gl_aggregate)}
                   </p>
                 </div>
                 <div className="col-span-1 flex justify-center">
                   {isGlAggPassed ? (
                     <Check className="h-4 w-4 text-emerald-600" />
                   ) : (
-                    <span className="text-[10px] text-red-600 font-bold uppercase">FAIL</span>
+                    <span className="text-[10px] text-red-650 text-red-600 font-bold uppercase">FAIL</span>
                   )}
                 </div>
               </div>
@@ -255,13 +377,24 @@ export default function VerificationDrawer({
                   <p className="text-xs font-bold text-slate-800">Automobile combined Limit</p>
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className={`text-xs font-mono font-bold ${isAutoPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                    ${extractedData.auto_combined_single_limit.toLocaleString()}
-                  </p>
+                  {isManualMode ? (
+                    <input
+                      type="number"
+                      id="input-auto-limit"
+                      value={activeData.auto_combined_single_limit === 0 ? "" : activeData.auto_combined_single_limit}
+                      onChange={(e) => setFormData({ ...activeData, auto_combined_single_limit: Number(e.target.value) })}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                  ) : (
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isAutoPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                      {formatUSD(activeData.auto_combined_single_limit)}
+                    </p>
+                  )}
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className="text-xs font-mono text-slate-500">
-                    ${req.auto_limit.toLocaleString()}
+                  <p className="text-xs font-mono text-slate-500 tracking-tight tabular-nums">
+                    {formatUSD(req.auto_limit)}
                   </p>
                 </div>
                 <div className="col-span-1 flex justify-center">
@@ -284,9 +417,21 @@ export default function VerificationDrawer({
                   <p className="text-xs font-bold text-slate-800">Workers Comp Statutory</p>
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className={`text-xs font-bold ${isWcPassed ? "text-emerald-700 animate-pulse" : "text-red-700 font-bold"}`}>
-                    {extractedData.workers_comp_statutory ? "Statutory Limits" : "Not Provided"}
-                  </p>
+                  {isManualMode ? (
+                    <label id="checkbox-wc-label" className="inline-flex items-center space-x-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={activeData.workers_comp_statutory}
+                        onChange={(e) => setFormData({ ...activeData, workers_comp_statutory: e.target.checked })}
+                        className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                      />
+                      <span className="text-xs font-bold text-slate-700">Statutory</span>
+                    </label>
+                  ) : (
+                    <p className={`text-xs font-bold ${isWcPassed ? "text-emerald-700 animate-pulse" : "text-red-700 font-bold"}`}>
+                      {activeData.workers_comp_statutory ? "Statutory Limits" : "Not Provided"}
+                    </p>
+                  )}
                 </div>
                 <div className="col-span-3 text-right">
                   <p className="text-xs text-slate-500">{req.workers_comp ? "Statutory" : "Not Required"}</p>
@@ -311,9 +456,19 @@ export default function VerificationDrawer({
                   <p className="text-xs font-bold text-slate-800">Policy Expiration Date</p>
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className={`text-xs font-mono font-bold ${isNotExpired ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                    {extractedData.policy_expiration_date}
-                  </p>
+                  {isManualMode ? (
+                    <input
+                      type="date"
+                      id="input-expiration-date"
+                      value={activeData.policy_expiration_date}
+                      onChange={(e) => setFormData({ ...activeData, policy_expiration_date: e.target.value })}
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    />
+                  ) : (
+                    <p className={`text-xs font-mono font-bold ${isNotExpired ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                      {activeData.policy_expiration_date}
+                    </p>
+                  )}
                 </div>
                 <div className="col-span-3 text-right">
                   <p className="text-xs text-slate-500">Not Expired</p>
@@ -338,13 +493,24 @@ export default function VerificationDrawer({
                   <p className="text-xs font-bold text-slate-800">GL Products-Completed Aggregate</p>
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className={`text-xs font-mono font-bold ${isGlProdPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                    ${(extractedData.gl_products_completed ?? 0).toLocaleString()}
-                  </p>
+                  {isManualMode ? (
+                    <input
+                      type="number"
+                      id="input-gl-products-completed"
+                      value={activeData.gl_products_completed === 0 ? "" : activeData.gl_products_completed}
+                      onChange={(e) => setFormData({ ...activeData, gl_products_completed: Number(e.target.value) })}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                  ) : (
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isGlProdPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                      {formatUSD(activeData.gl_products_completed)}
+                    </p>
+                  )}
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className="text-xs font-mono text-slate-500">
-                    ${(req.gl_products_completed ?? 2000000).toLocaleString()}
+                  <p className="text-xs font-mono text-slate-500 tracking-tight tabular-nums">
+                    {formatUSD(req.gl_products_completed ?? 2000000)}
                   </p>
                 </div>
                 <div className="col-span-1 flex justify-center">
@@ -368,13 +534,24 @@ export default function VerificationDrawer({
                   <p className="text-[10px] text-slate-500">Calculated for trade: {trade}</p>
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className={`text-xs font-mono font-bold ${isUmbrellaPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                    ${(extractedData.umbrella_limit ?? 0).toLocaleString()}
-                  </p>
+                  {isManualMode ? (
+                    <input
+                      type="number"
+                      id="input-umbrella"
+                      value={activeData.umbrella_limit === 0 ? "" : activeData.umbrella_limit}
+                      onChange={(e) => setFormData({ ...activeData, umbrella_limit: Number(e.target.value) })}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                  ) : (
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isUmbrellaPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                      {formatUSD(activeData.umbrella_limit)}
+                    </p>
+                  )}
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className="text-xs font-mono text-slate-500">
-                    ${requiredUmbrella.toLocaleString()}
+                  <p className="text-xs font-mono text-slate-500 tracking-tight tabular-nums">
+                    {formatUSD(requiredUmbrella)}
                   </p>
                 </div>
                 <div className="col-span-1 flex justify-center">
@@ -397,13 +574,24 @@ export default function VerificationDrawer({
                   <p className="text-xs font-bold text-slate-800">Employers' Liability: Accident</p>
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className={`text-xs font-mono font-bold ${isElAccidentPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                    ${(extractedData.employers_liability_accident ?? 0).toLocaleString()}
-                  </p>
+                  {isManualMode ? (
+                    <input
+                      type="number"
+                      id="input-el-accident"
+                      value={activeData.employers_liability_accident === 0 ? "" : activeData.employers_liability_accident}
+                      onChange={(e) => setFormData({ ...activeData, employers_liability_accident: Number(e.target.value) })}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                  ) : (
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isElAccidentPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                      {formatUSD(activeData.employers_liability_accident)}
+                    </p>
+                  )}
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className="text-xs font-mono text-slate-500">
-                    ${(req.employers_liability_accident ?? 1000000).toLocaleString()}
+                  <p className="text-xs font-mono text-slate-500 tracking-tight tabular-nums">
+                    {formatUSD(req.employers_liability_accident ?? 1000000)}
                   </p>
                 </div>
                 <div className="col-span-1 flex justify-center">
@@ -426,13 +614,24 @@ export default function VerificationDrawer({
                   <p className="text-xs font-bold text-slate-800">Employers' Liability: Disease (Per Person)</p>
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className={`text-xs font-mono font-bold ${isElDiseasePersonPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                    ${(extractedData.employers_liability_disease_person ?? 0).toLocaleString()}
-                  </p>
+                  {isManualMode ? (
+                    <input
+                      type="number"
+                      id="input-el-disease-person"
+                      value={activeData.employers_liability_disease_person === 0 ? "" : activeData.employers_liability_disease_person}
+                      onChange={(e) => setFormData({ ...activeData, employers_liability_disease_person: Number(e.target.value) })}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                  ) : (
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isElDiseasePersonPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                      {formatUSD(activeData.employers_liability_disease_person)}
+                    </p>
+                  )}
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className="text-xs font-mono text-slate-500">
-                    ${(req.employers_liability_disease_person ?? 1000000).toLocaleString()}
+                  <p className="text-xs font-mono text-slate-500 tracking-tight tabular-nums">
+                    {formatUSD(req.employers_liability_disease_person ?? 1000000)}
                   </p>
                 </div>
                 <div className="col-span-1 flex justify-center">
@@ -455,13 +654,24 @@ export default function VerificationDrawer({
                   <p className="text-xs font-bold text-slate-800">Employers' Liability: Disease (Policy Limit)</p>
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className={`text-xs font-mono font-bold ${isElDiseaseLimitPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                    ${(extractedData.employers_liability_disease_limit ?? 0).toLocaleString()}
-                  </p>
+                  {isManualMode ? (
+                    <input
+                      type="number"
+                      id="input-el-disease-limit"
+                      value={activeData.employers_liability_disease_limit === 0 ? "" : activeData.employers_liability_disease_limit}
+                      onChange={(e) => setFormData({ ...activeData, employers_liability_disease_limit: Number(e.target.value) })}
+                      placeholder="0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                  ) : (
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isElDiseaseLimitPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                      {formatUSD(activeData.employers_liability_disease_limit)}
+                    </p>
+                  )}
                 </div>
                 <div className="col-span-3 text-right">
-                  <p className="text-xs font-mono text-slate-500">
-                    ${(req.employers_liability_disease_limit ?? 1000000).toLocaleString()}
+                  <p className="text-xs font-mono text-slate-500 tracking-tight tabular-nums">
+                    {formatUSD(req.employers_liability_disease_limit ?? 1000000)}
                   </p>
                 </div>
                 <div className="col-span-1 flex justify-center">
@@ -486,13 +696,24 @@ export default function VerificationDrawer({
                     <p className="text-[10px] text-slate-500">Required for trade: {trade}</p>
                   </div>
                   <div className="col-span-3 text-right">
-                    <p className={`text-xs font-mono font-bold ${isProfessionalPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                      ${(extractedData.professional_liability ?? 0).toLocaleString()}
-                    </p>
+                    {isManualMode ? (
+                      <input
+                        type="number"
+                        id="input-professional-liability"
+                        value={activeData.professional_liability === 0 ? "" : activeData.professional_liability}
+                        onChange={(e) => setFormData({ ...activeData, professional_liability: Number(e.target.value) })}
+                        placeholder="0"
+                        className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    ) : (
+                      <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isProfessionalPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                        {formatUSD(activeData.professional_liability)}
+                      </p>
+                    )}
                   </div>
                   <div className="col-span-3 text-right">
-                    <p className="text-xs font-mono text-slate-500">
-                      $2,000,000
+                    <p className="text-xs font-mono text-slate-500 tracking-tight tabular-nums">
+                      {formatUSD(2000000)}
                     </p>
                   </div>
                   <div className="col-span-1 flex justify-center">
@@ -518,13 +739,24 @@ export default function VerificationDrawer({
                     <p className="text-[10px] text-slate-500">Required for trade: {trade}</p>
                   </div>
                   <div className="col-span-3 text-right">
-                    <p className={`text-xs font-mono font-bold ${isPollutionPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                      ${(extractedData.pollution_liability ?? 0).toLocaleString()}
-                    </p>
+                    {isManualMode ? (
+                      <input
+                        type="number"
+                        id="input-pollution-liability"
+                        value={activeData.pollution_liability === 0 ? "" : activeData.pollution_liability}
+                        onChange={(e) => setFormData({ ...activeData, pollution_liability: Number(e.target.value) })}
+                        placeholder="0"
+                        className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      />
+                    ) : (
+                      <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isPollutionPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                        {formatUSD(activeData.pollution_liability)}
+                      </p>
+                    )}
                   </div>
                   <div className="col-span-3 text-right">
-                    <p className="text-xs font-mono text-slate-500">
-                      $2,000,000
+                    <p className="text-xs font-mono text-slate-500 tracking-tight tabular-nums">
+                      {formatUSD(2000000)}
                     </p>
                   </div>
                   <div className="col-span-1 flex justify-center">
@@ -534,6 +766,71 @@ export default function VerificationDrawer({
                       <span className="text-[10px] text-red-600 font-bold uppercase">FAIL</span>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* Dynamic Custom Coverage Requirements specified in parent project */}
+              {project.custom_requirements && project.custom_requirements.length > 0 && (
+                <div id="drawer-custom-requirements-group" className="pt-2.5 border-t border-slate-200 mt-2 space-y-1.5">
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">
+                    Custom Project Coverages
+                  </p>
+                  {project.custom_requirements.map((customReq) => {
+                    const label = customReq.label;
+                    const requiredLimit = customReq.limit;
+                    if (!label || requiredLimit <= 0) return null;
+
+                    // Extracted fact
+                    const customEx = activeData.custom_extractions || {};
+                    const extractedValue = customEx[label] !== undefined && customEx[label] !== null ? Number(customEx[label]) : null;
+                    const isPassed = extractedValue !== null && extractedValue >= requiredLimit;
+
+                    return (
+                      <div
+                        key={customReq.id}
+                        data-testid={`match-row-custom-${customReq.id}`}
+                        className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
+                          isPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                        }`}
+                      >
+                        <div className="col-span-5">
+                          <p className="text-xs font-bold text-slate-800">{label}</p>
+                          <p className="text-[10px] text-slate-500">Custom Project Mandate</p>
+                        </div>
+                        <div className="col-span-3 text-right">
+                          {isManualMode ? (
+                            <input
+                              type="number"
+                              value={extractedValue === null ? "" : extractedValue}
+                              onChange={(e) => {
+                                const val = e.target.value === "" ? null : Number(e.target.value);
+                                const updatedEx = { ...customEx, [label]: val };
+                                setFormData({ ...activeData, custom_extractions: updatedEx });
+                              }}
+                              placeholder="0"
+                              className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                          ) : (
+                            <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                              {extractedValue !== null ? formatUSD(extractedValue) : "Not Found"}
+                            </p>
+                          )}
+                        </div>
+                        <div className="col-span-3 text-right">
+                          <p className="text-xs font-mono text-slate-500 tracking-tight tabular-nums">
+                            {formatUSD(requiredLimit)}
+                          </p>
+                        </div>
+                        <div className="col-span-1 flex justify-center">
+                          {isPassed ? (
+                            <Check className="h-4 w-4 text-emerald-600" />
+                          ) : (
+                            <span className="text-[10px] text-red-600 font-bold uppercase">FAIL</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -553,13 +850,13 @@ export default function VerificationDrawer({
             </div>
           )}
 
-          {/* Override Form Panel */}
-          <div id="override-form" className="p-3 bg-slate-50 rounded-lg border border-slate-200 space-y-3.5 mt-2">
-            <div className="flex items-center justify-between">
+          {/* Policy Waiver & Risk Exception Form */}
+          <div id="policy-waiver-section" className="p-4 bg-slate-50 rounded-lg border border-slate-200 space-y-4 mt-2">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200">
               <div>
-                <p className="text-xs font-bold text-slate-900">Legal Compliance Overriding Dispensation</p>
+                <p className="text-xs font-bold text-slate-900">Policy Waiver & Risk Exception Form</p>
                 <p className="text-[10px] text-slate-500">
-                  Allow temporarily overriding standard project gaps with proper written justification notes.
+                  Grant a formal, temporary audit dispensation for outstanding compliance infractions.
                 </p>
               </div>
               <label id="override-toggle-label" className="relative inline-flex items-center cursor-pointer">
@@ -569,23 +866,76 @@ export default function VerificationDrawer({
                   onChange={(e) => setOverride(e.target.checked)}
                   className="sr-only peer"
                 />
-                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-450 after:border-slate-350 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600 peer-checked:after:bg-white"></div>
+                <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-450 after:border-slate-350 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600 peer-checked:after:bg-white"></div>
               </label>
             </div>
 
             {override && (
-              <div id="override-justification-area" className="space-y-1 animate-in fade-in duration-150">
-                <label htmlFor="compliance-exception-notes" className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
-                  Mandated Override Reason & Justification *
-                </label>
-                <textarea
-                  id="compliance-exception-notes"
-                  rows={3}
-                  value={overrideNotes}
-                  onChange={(e) => setOverrideNotes(e.target.value)}
-                  placeholder="e.g. Risk Committee approved exception as drywall trade holds low structural risk parameters."
-                  className="w-full text-xs bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-2 text-slate-800"
-                ></textarea>
+              <div id="override-fields-grid" className="space-y-3 pt-1 animate-in fade-in duration-200">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Dropdown Reason */}
+                  <div className="space-y-1">
+                    <label htmlFor="waiver-reason-selector" className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
+                      Waiver Reason Category *
+                    </label>
+                    <select
+                      id="waiver-reason-selector"
+                      value={waiverReasonType}
+                      onChange={(e) => setWaiverReasonType(e.target.value as any)}
+                      className="w-full text-xs bg-white border border-slate-200 focus:border-indigo-500 focus:outline-none rounded p-2 text-slate-800"
+                    >
+                      <option value="">-- Select Standardized Reason --</option>
+                      <option value="Low Contract Value">Low Contract Value</option>
+                      <option value="Low-Risk Scope">Low-Risk Scope</option>
+                      <option value="Executive Discretion">Executive Discretion</option>
+                      <option value="Temporary Extension">Temporary Extension</option>
+                    </select>
+                  </div>
+
+                  {/* Date Picker */}
+                  <div className="space-y-1">
+                    <label htmlFor="waiver-expiration-picker" className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
+                      Waiver Expiration Date (Optional)
+                    </label>
+                    <input
+                      type="date"
+                      id="waiver-expiration-picker"
+                      value={waiverExpirationDate}
+                      onChange={(e) => setWaiverExpirationDate(e.target.value)}
+                      className="w-full text-xs bg-white border border-slate-200 focus:border-indigo-500 focus:outline-none rounded p-2 text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                {/* Authorizer */}
+                <div className="space-y-1">
+                  <label htmlFor="waiver-authorizer-input" className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
+                    Authorized By (Name or Email) *
+                  </label>
+                  <input
+                    type="text"
+                    id="waiver-authorizer-input"
+                    value={waiverAuthorizedBy}
+                    onChange={(e) => setWaiverAuthorizedBy(e.target.value)}
+                    placeholder="e.g. executive@shieldcoi.com"
+                    className="w-full text-xs bg-white border border-slate-200 focus:border-indigo-500 focus:outline-none rounded p-2 text-slate-800"
+                  />
+                </div>
+
+                {/* Justification Log notes */}
+                <div className="space-y-1">
+                  <label htmlFor="compliance-exception-notes" className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
+                    Justification Context & Commercial Logic *
+                  </label>
+                  <textarea
+                    id="compliance-exception-notes"
+                    rows={3}
+                    value={overrideNotes}
+                    onChange={(e) => setOverrideNotes(e.target.value)}
+                    placeholder="Provide detailed contextual notes explaining the commercial logic for this exception."
+                    className="w-full text-xs bg-white border border-slate-200 focus:border-indigo-500 focus:outline-none rounded p-2 text-slate-800"
+                  ></textarea>
+                </div>
               </div>
             )}
           </div>
@@ -593,11 +943,15 @@ export default function VerificationDrawer({
 
         {/* Footer Actions */}
         <div id="verification-footer" className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-          <div className="flex items-center space-x-1.5Slot pb-2.5 py-1">
+          <div className="flex items-center space-x-1.5 pb-2.5 py-1">
             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Evaluation Status:</span>
             {finalStatus === "Compliant" ? (
               <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center shadow-xs">
                 <ShieldCheck className="h-3.5 w-3.5 mr-1 text-emerald-600" /> Compliant
+              </span>
+            ) : finalStatus === "Approved Exception" ? (
+              <span className="text-[10px] font-bold text-indigo-800 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded flex items-center shadow-xs">
+                <ShieldCheck className="h-3.5 w-3.5 mr-1 text-indigo-600" /> Approved Exception
               </span>
             ) : (
               <span className="text-[10px] font-bold text-red-800 bg-red-50 border border-red-200 px-2 py-0.5 rounded flex items-center shadow-xs uppercase tracking-wide">
@@ -610,16 +964,16 @@ export default function VerificationDrawer({
             <button
               onClick={onClose}
               type="button"
-              className="px-3.5 py-1.5 bg-white text-slate-700 border border-slate-205 border-slate-200 hover:bg-slate-100 rounded-md font-bold text-[11px] cursor-pointer shadow-xs"
+              className="px-3.5 py-1.5 bg-white text-slate-700 border border-slate-200 hover:bg-slate-100 rounded-md font-bold text-[11px] cursor-pointer shadow-xs"
             >
               Cancel
             </button>
             <button
               onClick={handleApplyResolution}
               type="button"
-              disabled={override && !overrideNotes.trim() || submitting}
+              disabled={(override && (!overrideNotes.trim() || !waiverAuthorizedBy.trim() || !waiverReasonType)) || submitting}
               className={`px-4 py-1.5 rounded-md text-[11px] font-bold tracking-wide uppercase transition-all shadow-xs cursor-pointer ${
-                override && !overrideNotes.trim()
+                override && (!overrideNotes.trim() || !waiverAuthorizedBy.trim() || !waiverReasonType)
                   ? "bg-slate-200 text-slate-400 cursor-not-allowed"
                   : "bg-blue-600 hover:bg-blue-700 text-white"
               }`}

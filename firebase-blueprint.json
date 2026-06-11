@@ -36,6 +36,26 @@
             "employers_liability_disease_limit"
           ]
         },
+        "custom_requirements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+               "label": { "type": "string" },
+              "limit": { "type": "number" }
+            },
+            "required": ["id", "label", "limit"]
+          }
+        },
+        "email_templates": {
+          "type": "object",
+          "properties": {
+            "expired_template": { "type": "string" },
+            "insufficient_template": { "type": "string" }
+          },
+          "required": ["expired_template", "insufficient_template"]
+        },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["id", "name", "number", "target_completion_date", "requirements", "createdAt"]
@@ -50,10 +70,13 @@
         "company_name": { "type": "string" },
         "trade": { "type": "string" },
         "contract_value": { "type": "number" },
-        "compliance_status": { "type": "string", "enum": ["Compliant", "Insufficient Coverage", "Expired", "Pending Upload"] },
+        "compliance_status": { "type": "string", "enum": ["Compliant", "Insufficient Coverage", "Expired", "Pending Upload", "Approved Exception"] },
         "manual_override": { "type": "boolean" },
         "override_notes": { "type": "string" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "waiver_reason_type": { "type": ["string", "null"], "enum": ["Low Contract Value", "Low-Risk Scope", "Executive Discretion", "Temporary Extension", null] },
+        "waiver_authorized_by": { "type": ["string", "null"] },
+        "waiver_expiration_date": { "type": ["string", "null"], "format": "date" }
       },
       "required": ["id", "project_id", "company_name", "trade", "contract_value", "compliance_status", "manual_override", "createdAt"]
     },
@@ -83,6 +106,16 @@
         "validation_errors": {
           "type": "array",
           "items": { "type": "string" }
+        },
+        "extraction_method": {
+          "type": "string",
+          "enum": ["AI_Scan", "Manual_Entry"]
+        },
+        "custom_extractions": {
+          "type": "object",
+          "additionalProperties": {
+            "type": ["number", "null"]
+          }
         }
       },
       "required": ["id", "subcontractor_id", "project_id", "uploaded_at", "file_name", "validation_errors"]
@@ -98,9 +131,10 @@
         "subcontractor_name": { "type": "string" },
         "type": { "type": "string", "enum": ["danger", "warning", "info"] },
         "message": { "type": "string" },
-        "timestamp": { "type": "string", "format": "date-time" }
+        "timestamp": { "type": "string", "format": "date-time" },
+        "resolved": { "type": "boolean" }
       },
-      "required": ["id", "project_id", "project_name", "subcontractor_name", "type", "message", "timestamp"]
+      "required": ["id", "project_id", "project_name", "subcontractor_name", "type", "message", "timestamp", "resolved"]
     }
   },
   "firestore": {

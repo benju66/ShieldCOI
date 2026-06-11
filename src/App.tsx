@@ -20,33 +20,47 @@ import {
   Mail,
   ChevronRight,
   Sliders,
-  ChevronLeft
+  ChevronLeft,
+  Edit2,
+  Trash2,
+  History,
+  Download,
+  Printer
 } from "lucide-react";
 
 import {
   getProjects,
   createProject,
+  updateProject,
+  deleteProject,
   getSubcontractors,
   createSubcontractor,
   updateSubcontractor,
+  deleteSubcontractor,
   submitCoiRecord,
   getNotifications,
-  seedInitialData
+  seedInitialData,
+  getCoiRecords
 } from "./dbService";
 
-import { Project, Subcontractor, Notification } from "./types";
+import { Project, Subcontractor, Notification, CoiRecord } from "./types";
 import DashboardStats from "./components/DashboardStats";
 import ProjectForm from "./components/ProjectForm";
 import SubcontractorModal from "./components/SubcontractorModal";
 import CoiUploadZone from "./components/CoiUploadZone";
 import VerificationDrawer from "./components/VerificationDrawer";
 import NotificationList from "./components/NotificationList";
+import CoiHistoryDrawer from "./components/CoiHistoryDrawer";
+import { exportToCSV } from "./utils/reportExporter";
+import ExecutivePrintReport from "./components/ExecutivePrintReport";
+import { formatUSD } from "./utils/currency";
 
 export default function App() {
   // DB States
   const [projects, setProjects] = useState<Project[]>([]);
   const [allSubcontractors, setAllSubcontractors] = useState<Subcontractor[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [activeCoiMap, setActiveCoiMap] = useState<Record<string, CoiRecord>>({});
 
   // UI States
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
@@ -54,8 +68,13 @@ export default function App() {
   const [pageLoading, setPageLoading] = useState(true);
   const [isSeeding, setIsSeeding] = useState(false);
 
+  // History state
+  const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
+  const [activeSubForHistory, setActiveSubForHistory] = useState<Subcontractor | null>(null);
+
   // Modals state
   const [isProjModalOpen, setIsProjModalOpen] = useState(false);
+  const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
   const [isSubModalOpen, setIsSubModalOpen] = useState(false);
   const [activeSubForUpload, setActiveSubForUpload] = useState<Subcontractor | null>(null);
 
@@ -90,11 +109,20 @@ export default function App() {
 
       // Accumulate subcontractors
       const results: Subcontractor[] = [];
+      const coiMap: Record<string, CoiRecord> = {};
       for (const p of projs) {
         const subs = await getSubcontractors(p.id);
         results.push(...subs);
+
+        for (const sub of subs) {
+          const cois = await getCoiRecords(p.id, sub.id);
+          if (cois && cois.length > 0) {
+            coiMap[sub.id] = cois[0];
+          }
+        }
       }
       setAllSubcontractors(results);
+      setActiveCoiMap(coiMap);
 
       if (resetSelected) {
         setSelectedProject(null);
@@ -164,9 +192,13 @@ export default function App() {
     return { label: "Fully Compliant", color: "text-emerald-400 bg-emerald-500/10 border-emerald-550/20" };
   };
 
-  // Create Project handler
-  const handleCreateProject = async (projectData: Omit<Project, "id" | "createdAt">) => {
-    await createProject(projectData);
+  // Save Project handler (handles both create and edit specifications)
+  const handleSaveProject = async (projectData: Omit<Project, "id" | "createdAt">) => {
+    if (projectToEdit) {
+      await updateProject(projectToEdit.id, projectData);
+    } else {
+      await createProject(projectData);
+    }
     await loadAllData();
   };
 
@@ -192,39 +224,53 @@ export default function App() {
   const handleAuditSave = async (
     manualOverride: boolean,
     notes: string,
-    status: "Compliant" | "Insufficient Coverage" | "Expired"
+    status: "Compliant" | "Insufficient Coverage" | "Expired" | "Approved Exception",
+    waiverReasonType: "Low Contract Value" | "Low-Risk Scope" | "Executive Discretion" | "Temporary Extension" | null,
+    waiverAuthorizedBy: string | null,
+    waiverExpirationDate: string | null,
+    updatedPayload?: any
   ) => {
     if (!selectedProject || !activeSubForUpload || !scannedPayload) return;
 
+    const payloadToSave = updatedPayload || scannedPayload;
+
     // 1. Submit COI record
     await submitCoiRecord(selectedProject.id, activeSubForUpload.id, {
-      file_name: scannedPayload.file_name,
-      insured_extracted_name: scannedPayload.insured_name,
-      gl_occurrence_extracted: scannedPayload.gl_each_occurrence,
-      gl_aggregate_extracted: scannedPayload.gl_general_aggregate,
-      auto_combined_single_limit_extracted: scannedPayload.auto_combined_single_limit,
-      workers_comp_statutory_extracted: scannedPayload.workers_comp_statutory,
-      policy_expiration_date_extracted: scannedPayload.policy_expiration_date,
-      gl_products_completed_extracted: scannedPayload.gl_products_completed ?? 0,
-      umbrella_limit_extracted: scannedPayload.umbrella_limit ?? 0,
-      employers_liability_accident_extracted: scannedPayload.employers_liability_accident ?? 0,
-      employers_liability_disease_person_extracted: scannedPayload.employers_liability_disease_person ?? 0,
-      employers_liability_disease_limit_extracted: scannedPayload.employers_liability_disease_limit ?? 0,
-      professional_liability_extracted: scannedPayload.professional_liability ?? 0,
-      pollution_liability_extracted: scannedPayload.pollution_liability ?? 0,
+      file_name: payloadToSave.file_name,
+      insured_extracted_name: payloadToSave.insured_name,
+      gl_occurrence_extracted: payloadToSave.gl_each_occurrence,
+      gl_aggregate_extracted: payloadToSave.gl_general_aggregate,
+      auto_combined_single_limit_extracted: payloadToSave.auto_combined_single_limit,
+      workers_comp_statutory_extracted: payloadToSave.workers_comp_statutory,
+      policy_expiration_date_extracted: payloadToSave.policy_expiration_date,
+      gl_products_completed_extracted: payloadToSave.gl_products_completed ?? 0,
+      umbrella_limit_extracted: payloadToSave.umbrella_limit ?? 0,
+      employers_liability_accident_extracted: payloadToSave.employers_liability_accident ?? 0,
+      employers_liability_disease_person_extracted: payloadToSave.employers_liability_disease_person ?? 0,
+      employers_liability_disease_limit_extracted: payloadToSave.employers_liability_disease_limit ?? 0,
+      professional_liability_extracted: payloadToSave.professional_liability ?? 0,
+      pollution_liability_extracted: payloadToSave.pollution_liability ?? 0,
+      extraction_method: payloadToSave.extraction_method || "AI_Scan",
     });
 
     // 2. Commit override state if chosen
     if (manualOverride) {
       await updateSubcontractor(selectedProject.id, activeSubForUpload.id, {
         manual_override: true,
-        compliance_status: "Compliant",
+        compliance_status: "Approved Exception",
         override_notes: notes,
+        waiver_reason_type: waiverReasonType,
+        waiver_authorized_by: waiverAuthorizedBy,
+        waiver_expiration_date: waiverExpirationDate,
       });
     } else {
       await updateSubcontractor(selectedProject.id, activeSubForUpload.id, {
         manual_override: false,
+        compliance_status: status as any,
         override_notes: "",
+        waiver_reason_type: null,
+        waiver_authorized_by: null,
+        waiver_expiration_date: null,
       });
     }
 
@@ -245,7 +291,8 @@ export default function App() {
   }
 
   return (
-    <div id="shieldcoi-app-canvas" className="min-h-screen bg-slate-50 font-sans text-slate-850 flex flex-col selection:bg-blue-500/20 selection:text-blue-900 antialiased">
+    <>
+      <div id="shieldcoi-app-canvas" className="min-h-screen bg-slate-50 font-sans text-slate-850 flex flex-col selection:bg-blue-500/20 selection:text-blue-900 antialiased print:hidden">
       
       {/* 1. Header Navigation Bar */}
       <header id="app-header" className="bg-white border-b border-slate-200 sticky top-0 z-40 px-6 py-3 flex items-center justify-between shadow-xs">
@@ -406,6 +453,42 @@ export default function App() {
                         <span className="text-[10px] font-mono text-blue-600 bg-blue-50/75 p-0.5 px-1.5 rounded border border-blue-200 font-bold">
                           {selectedProject.number}
                         </span>
+                        
+                        {/* Control buttons */}
+                        <div className="flex items-center space-x-1.5 ml-1.5 shrink-0">
+                          <button
+                            onClick={() => {
+                              setProjectToEdit(selectedProject);
+                              setIsProjModalOpen(true);
+                            }}
+                            title="Edit Project Specifications"
+                            className="p-1 rounded bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-slate-500 hover:text-blue-600 cursor-pointer transition-all flex items-center justify-center"
+                          >
+                            <Edit2 className="h-3 w-3" />
+                          </button>
+                          <button
+                            onClick={async () => {
+                              const confirmText = `Warning: This action will permanently delete this project along with all registered subcontractors and scanned COI records. This cannot be undone. Type the project number to confirm.`;
+                              const input = window.prompt(confirmText);
+                              if (input === selectedProject.number) {
+                                try {
+                                  await deleteProject(selectedProject.id);
+                                  setSelectedProject(null);
+                                  await loadAllData(true);
+                                } catch (error) {
+                                  console.error(error);
+                                  alert("An error occurred during project database execution.");
+                                }
+                              } else if (input !== null) {
+                                alert("Verification match mismatch. Deletion aborted.");
+                              }
+                            }}
+                            title="Delete Project Specifications"
+                            className="p-1 rounded bg-slate-55 hover:bg-red-50 border border-slate-200 hover:border-red-350 text-red-500 hover:text-red-700 cursor-pointer transition-all flex items-center justify-center font-bold"
+                          >
+                            <Trash2 className="h-3 w-3 text-red-650" />
+                          </button>
+                        </div>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-0.5">
                         Setup risk thresholds and direct subcontractor insurance audits below.
@@ -413,15 +496,37 @@ export default function App() {
                     </div>
                   </div>
 
-                  <button
-                    onClick={() => setIsSubModalOpen(true)}
-                    id="trigger-add-vendor-button"
-                    type="button"
-                    className="flex items-center space-x-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-2.5 py-1.5 rounded-md text-[11px] font-semibold cursor-pointer shadow-xs transition-all"
-                  >
-                    <Plus className="h-3 w-3 text-slate-500" />
-                    <span>Add Subcontractor</span>
-                  </button>
+                  <div className="flex items-center flex-wrap gap-2 shrink-0">
+                    <button
+                      onClick={() => exportToCSV(selectedProject.name, selectedProject.number, activeSubs)}
+                      id="download-csv-button"
+                      type="button"
+                      className="flex items-center space-x-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-2.5 py-1.5 rounded-md text-[11px] font-semibold cursor-pointer shadow-xs transition-all"
+                    >
+                      <Download className="h-3.5 w-3.5 text-slate-500" />
+                      <span>Download CSV</span>
+                    </button>
+
+                    <button
+                      onClick={() => window.print()}
+                      id="print-report-button"
+                      type="button"
+                      className="flex items-center space-x-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-2.5 py-1.5 rounded-md text-[11px] font-semibold cursor-pointer shadow-xs transition-all"
+                    >
+                      <Printer className="h-3.5 w-3.5 text-slate-500" />
+                      <span>Print Report</span>
+                    </button>
+
+                    <button
+                      onClick={() => setIsSubModalOpen(true)}
+                      id="trigger-add-vendor-button"
+                      type="button"
+                      className="flex items-center space-x-1 bg-blue-600 hover:bg-blue-750 text-white px-2.5 py-1.5 rounded-md text-[11px] font-semibold cursor-pointer shadow-xs transition-all"
+                    >
+                      <Plus className="h-3 w-3 text-white" />
+                      <span>Add Subcontractor</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* 2. Side-by-Side configuration panel vs Enrolled subcontractors table */}
@@ -438,24 +543,24 @@ export default function App() {
                         <span className="text-[9px] text-slate-500 block uppercase font-semibold">
                           General Liability Occurrence Limit
                         </span>
-                        <strong className="text-slate-800 font-mono">
-                          ${selectedProject.requirements.gl_occurrence.toLocaleString()}
+                        <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
+                          {formatUSD(selectedProject.requirements.gl_occurrence)}
                         </strong>
                       </div>
                       <div>
                         <span className="text-[9px] text-slate-500 block uppercase font-semibold">
                           General Liability General Aggregate
                         </span>
-                        <strong className="text-slate-800 font-mono">
-                          ${selectedProject.requirements.gl_aggregate.toLocaleString()}
+                        <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
+                          {formatUSD(selectedProject.requirements.gl_aggregate)}
                         </strong>
                       </div>
                       <div>
                         <span className="text-[9px] text-slate-500 block uppercase font-semibold">
                           Automobile Liability Combined Single
                         </span>
-                        <strong className="text-slate-800 font-mono">
-                          ${selectedProject.requirements.auto_limit.toLocaleString()}
+                        <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
+                          {formatUSD(selectedProject.requirements.auto_limit)}
                         </strong>
                       </div>
                       <div className="flex items-center justify-between border-t border-slate-200 pt-1.5 text-[11px]">
@@ -478,16 +583,17 @@ export default function App() {
                     <table id="subcontractors-table" className="w-full text-left border-collapse">
                       <thead>
                         <tr className="border-b border-slate-200 text-[10px] text-slate-500 font-semibold uppercase tracking-wider bg-slate-50">
-                          <th className="p-2.5 px-3.5">Company Name & Trade</th>
-                          <th className="p-2.5 text-right">Contract Value</th>
-                          <th className="p-2.5 text-center">Status</th>
-                          <th className="p-2.5 text-center">Action</th>
+                          <th className="py-3 px-4">Company Name & Trade</th>
+                          <th className="py-3 px-4 text-right">Contract Value</th>
+                          <th className="py-3 px-4 text-center">Status</th>
+                          <th className="py-3 px-4 text-center">COI Expiration</th>
+                          <th className="py-3 px-4 text-center">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-xs text-slate-800">
                         {activeSubs.length === 0 ? (
                           <tr>
-                            <td colSpan={4} className="text-center py-8 text-slate-400 italic">
+                            <td colSpan={5} className="text-center py-8 text-slate-400 italic">
                               No subcontractor companies registered yet under this project.
                             </td>
                           </tr>
@@ -503,6 +609,8 @@ export default function App() {
                               badgeStyle = "text-red-800 bg-red-50 border-red-200/80 font-bold";
                             } else if (sub.compliance_status === "Insufficient Coverage") {
                               badgeStyle = "text-amber-800 bg-amber-50 border-amber-200/80";
+                            } else if (sub.compliance_status === "Approved Exception") {
+                              badgeStyle = "text-indigo-800 bg-indigo-50 border-indigo-200/80 font-bold";
                             }
 
                             return (
@@ -512,43 +620,161 @@ export default function App() {
                                   isSelectedForUpload ? "bg-blue-50/50" : ""
                                 }`}
                               >
-                                <td className="p-2 px-3">
-                                  <span className="font-semibold text-slate-905 flex items-center">
-                                    {sub.company_name}
-                                    {sub.manual_override && (
-                                      <span
-                                        title={sub.override_notes}
-                                        className="ml-1.5 text-[8px] bg-purple-100 text-purple-800 border border-purple-200 px-1 rounded font-bold uppercase tracking-wide cursor-help"
+                                <td className="py-3 px-4 animate-in fade-in duration-100">
+                                  <div className="flex flex-col">
+                                    <div className="font-semibold text-slate-905 flex items-center flex-wrap gap-y-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setActiveSubForHistory(sub);
+                                          setHistoryDrawerOpen(true);
+                                        }}
+                                        className="font-semibold text-slate-905 hover:text-blue-600 transition-colors text-left focus:outline-none hover:underline cursor-pointer"
+                                        title="Click to view full COI history"
                                       >
-                                        Override Active
-                                      </span>
+                                        {sub.company_name}
+                                      </button>
+                                      {sub.manual_override && (
+                                        <span
+                                          title={sub.override_notes}
+                                          className="ml-1.5 text-[8px] bg-indigo-100 text-indigo-800 border border-indigo-250 px-1.5 rounded font-bold uppercase tracking-wide cursor-help shrink-0"
+                                        >
+                                          Waiver Active
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center space-x-1.5 mt-0.5">
+                                      <span className="text-[10px] text-slate-400">{sub.trade}</span>
+                                      <span className="text-slate-300">|</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setActiveSubForHistory(sub);
+                                          setHistoryDrawerOpen(true);
+                                        }}
+                                        title="View COI history & previous policy years"
+                                        className="inline-flex items-center space-x-0.5 text-[10px] text-slate-400 hover:text-blue-600 hover:bg-blue-50 px-1 rounded transition-all cursor-pointer"
+                                      >
+                                        <History className="h-2.5 w-2.5 text-slate-400" />
+                                        <span className="text-[9px] font-medium">History</span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 text-right font-mono text-xs font-semibold text-slate-800 tracking-tight tabular-nums">
+                                  {formatUSD(sub.contract_value)}
+                                </td>
+                                <td className="py-3 px-4 text-center relative">
+                                  <div className="inline-block relative group">
+                                    <span className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider cursor-help transition-all ${badgeStyle}`}>
+                                      {sub.compliance_status}
+                                    </span>
+                                    
+                                    {sub.manual_override && (
+                                      <div className="hidden group-hover:block absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-3 bg-slate-900 text-white rounded-lg shadow-xl text-left normal-case tracking-normal animate-in fade-in slide-in-from-bottom-1 duration-150">
+                                        <div className="border-b border-slate-700 pb-1.5 mb-1.5 flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-indigo-400">
+                                          <span>Policy Waiver Auditable Info</span>
+                                          <span className="bg-indigo-950 text-indigo-300 px-1.5 py-0.2 rounded border border-indigo-800">Exception</span>
+                                        </div>
+                                        <div className="space-y-1.5 text-[11px]">
+                                          <div>
+                                            <span className="text-slate-400 block text-[9px] font-semibold uppercase">Waiver Reason Type</span>
+                                            <span className="font-semibold text-slate-100">{sub.waiver_reason_type || "N/A"}</span>
+                                          </div>
+                                          <div>
+                                            <span className="text-slate-400 block text-[9px] font-semibold uppercase">Authorized Officer</span>
+                                            <span className="font-mono text-slate-200">{sub.waiver_authorized_by || "Authorized In Writing"}</span>
+                                          </div>
+                                          <div>
+                                            <span className="text-slate-400 block text-[9px] font-semibold uppercase">Expiration Limit Date</span>
+                                            <span className={`font-semibold ${sub.waiver_expiration_date ? "text-amber-305" : "text-emerald-400"}`}>
+                                              {sub.waiver_expiration_date ? sub.waiver_expiration_date : "No limit (Unconstrained)"}
+                                            </span>
+                                          </div>
+                                          <div className="border-t border-slate-800 pt-1.5 mt-1">
+                                            <span className="text-slate-400 block text-[9px] font-semibold uppercase">Resolution Context</span>
+                                            <p className="text-slate-300 text-[10px] italic leading-relaxed break-words">{sub.override_notes || "No notes logged."}</p>
+                                          </div>
+                                        </div>
+                                        <div className="absolute top-full left-1/2 -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-l-transparent border-r-transparent border-t-slate-900"></div>
+                                      </div>
                                     )}
-                                  </span>
-                                  <span className="text-[10px] text-slate-400 block">{sub.trade}</span>
+                                  </div>
                                 </td>
-                                <td className="p-2 text-right font-mono text-slate-705">
-                                  ${sub.contract_value.toLocaleString()}
+                                <td className="py-3 px-4 text-center">
+                                  {(() => {
+                                    const activeCoi = activeCoiMap[sub.id];
+                                    const coiExpDate = activeCoi 
+                                      ? (activeCoi.policy_expiration_date_extracted || (activeCoi as any).policy_expiration_date)
+                                      : null;
+
+                                    if (!coiExpDate) {
+                                      return (
+                                        <span id={`coi-exp-fallback-${sub.id}`} className="text-slate-400 italic">
+                                          No Document
+                                        </span>
+                                      );
+                                    }
+
+                                    // Check expiration conditions
+                                    const expiration = new Date(coiExpDate);
+                                    const current = new Date("2026-06-11");
+                                    const isExpired = expiration <= current;
+
+                                    let alertClass = "text-slate-600";
+                                    if (isExpired) {
+                                      alertClass = "text-red-600 font-bold";
+                                    } else {
+                                      const warnDaysOut = selectedProject?.requirements?.warn_days_out ?? 30;
+                                      const diffTime = expiration.getTime() - current.getTime();
+                                      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                                      if (diffDays <= warnDaysOut) {
+                                        alertClass = "text-amber-600";
+                                      }
+                                    }
+
+                                    return (
+                                      <span id={`coi-exp-date-${sub.id}`} className={`font-mono text-xs ${alertClass}`}>
+                                        {coiExpDate}
+                                      </span>
+                                    );
+                                  })()}
                                 </td>
-                                <td className="p-2 text-center">
-                                  <span className={`inline-block text-[9px] font-bold px-1.5 py-0.2 rounded border uppercase tracking-wider ${badgeStyle}`}>
-                                    {sub.compliance_status}
-                                  </span>
-                                </td>
-                                <td className="p-2 text-center">
-                                  <button
-                                    onClick={() => {
-                                      setActiveSubForUpload(sub);
-                                      setScannedPayload(null);
-                                    }}
-                                    type="button"
-                                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide transition-colors cursor-pointer ${
-                                      isSelectedForUpload
-                                        ? "bg-slate-100 text-slate-450 border border-slate-200 cursor-not-allowed"
-                                        : "bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200/55"
-                                    }`}
-                                  >
-                                    {sub.compliance_status === "Pending Upload" ? "Upload COI" : "Re-Scan COI"}
-                                  </button>
+                                <td className="py-3 px-4 text-center animate-in fade-in duration-100">
+                                  <div className="flex items-center justify-center space-x-1.5">
+                                    <button
+                                      onClick={() => {
+                                        setActiveSubForUpload(sub);
+                                        setScannedPayload(null);
+                                      }}
+                                      type="button"
+                                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide transition-colors cursor-pointer ${
+                                        isSelectedForUpload
+                                          ? "bg-slate-100 text-slate-450 border border-slate-200 cursor-not-allowed"
+                                          : "bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200/55"
+                                      }`}
+                                    >
+                                      {sub.compliance_status === "Pending Upload" ? "Upload COI" : "Re-Scan COI"}
+                                    </button>
+                                    <button
+                                      onClick={async () => {
+                                        if (window.confirm(`Are you sure you want to remove ${sub.company_name} from this project?`)) {
+                                          try {
+                                            await deleteSubcontractor(selectedProject.id, sub.id);
+                                            await loadAllData();
+                                          } catch (error) {
+                                            console.error(error);
+                                            alert("An error occurred during subcontractor database deletion.");
+                                          }
+                                        }
+                                      }}
+                                      type="button"
+                                      title={`Remove ${sub.company_name}`}
+                                      className="p-1 rounded bg-red-50/30 hover:bg-red-50 border border-red-100/60 hover:border-red-200 text-red-500/75 hover:text-red-600 cursor-pointer transition-all flex items-center justify-center"
+                                    >
+                                      <Trash2 className="h-3 w-3" />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -580,6 +806,7 @@ export default function App() {
                           setIsScanningActive(true);
                         }}
                         onScanComplete={handleScanFinished}
+                        customRequirements={selectedProject?.custom_requirements}
                       />
                     </div>
                   </div>
@@ -616,7 +843,16 @@ export default function App() {
                 </div>
 
                 {/* Notifications Log */}
-                <NotificationList notifications={notifications} />
+                <NotificationList
+                  notifications={notifications}
+                  projects={projects}
+                  onViewProject={(projId) => {
+                    const match = projects.find((p) => p.id === projId);
+                    if (match) {
+                      setSelectedProject(match);
+                    }
+                  }}
+                />
               </div>
             )}
           </section>
@@ -626,8 +862,12 @@ export default function App() {
       {/* 3. Global Modal Components */}
       <ProjectForm
         isOpen={isProjModalOpen}
-        onClose={() => setIsProjModalOpen(false)}
-        onSave={handleCreateProject}
+        onClose={() => {
+          setIsProjModalOpen(false);
+          setProjectToEdit(null);
+        }}
+        onSave={handleSaveProject}
+        projectToEdit={projectToEdit || undefined}
       />
 
       <SubcontractorModal
@@ -651,6 +891,29 @@ export default function App() {
         extractedData={scannedPayload}
         onSave={handleAuditSave}
       />
+
+      {/* COI history timeline & archive inspect drawer */}
+      {selectedProject && activeSubForHistory && (
+        <CoiHistoryDrawer
+          isOpen={historyDrawerOpen}
+          onClose={() => {
+            setHistoryDrawerOpen(false);
+            setActiveSubForHistory(null);
+          }}
+          projectId={selectedProject.id}
+          subcontractor={activeSubForHistory}
+        />
+      )}
     </div>
-  );
+
+    {/* Dedicated Hidden Print Page Container */}
+    <div id="shieldcoi-print-container" className="hidden print:block min-h-screen bg-white">
+      <ExecutivePrintReport
+        project={selectedProject}
+        subcontractors={activeSubs}
+        activeCoiMap={activeCoiMap}
+      />
+    </div>
+  </>
+);
 }

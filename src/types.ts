@@ -18,6 +18,11 @@ export interface Project {
   target_completion_date: string; // YYYY-MM-DD
   requirements: ProjectRequirements;
   createdAt: string;
+  custom_requirements?: { id: string; label: string; limit: number }[];
+  email_templates?: {
+    expired_template: string;
+    insufficient_template: string;
+  };
 }
 
 export type TradeType =
@@ -48,10 +53,13 @@ export interface Subcontractor {
   company_name: string;
   trade: TradeType | string;
   contract_value: number;
-  compliance_status: "Compliant" | "Insufficient Coverage" | "Expired" | "Pending Upload";
+  compliance_status: "Compliant" | "Insufficient Coverage" | "Expired" | "Pending Upload" | "Approved Exception";
   manual_override: boolean;
   override_notes: string;
   createdAt: string;
+  waiver_reason_type?: "Low Contract Value" | "Low-Risk Scope" | "Executive Discretion" | "Temporary Extension" | null;
+  waiver_authorized_by?: string | null;
+  waiver_expiration_date?: string | null;
 }
 
 export interface CoiRecord {
@@ -74,6 +82,8 @@ export interface CoiRecord {
   professional_liability_extracted: number;
   pollution_liability_extracted: number;
   validation_errors: string[];
+  extraction_method?: "AI_Scan" | "Manual_Entry";
+  custom_extractions?: Record<string, number | null>;
 }
 
 export interface Notification {
@@ -84,4 +94,5 @@ export interface Notification {
   type: "danger" | "warning" | "info";
   message: string;
   timestamp: string; // ISO string
+  resolved: boolean;
 }

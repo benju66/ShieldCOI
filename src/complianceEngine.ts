@@ -21,6 +21,7 @@ export function verifyCompliance(
     employers_liability_disease_limit?: number;
     professional_liability?: number;
     pollution_liability?: number;
+    custom_extractions?: Record<string, number | null>;
   },
   subcontractorTrade: string = "Other Trades",
   currentDateStr: string = "2026-06-11"
@@ -152,6 +153,26 @@ export function verifyCompliance(
         `Policy expires on ${coi.policy_expiration_date} (In ${diffDays} days). This is within the project's ${req.warn_days_out}-day risk grace threshold.`
       );
     }
+  }
+
+  // 13. Dynamic Custom Coverage Requirements Evaluation
+  if (project.custom_requirements && Array.isArray(project.custom_requirements)) {
+    project.custom_requirements.forEach((customReq) => {
+      const label = customReq.label;
+      const requiredLimit = customReq.limit;
+      if (label && requiredLimit > 0) {
+        const extractedValue = coi.custom_extractions ? coi.custom_extractions[label] : undefined;
+        if (extractedValue === undefined || extractedValue === null) {
+          errors.push(
+            `Custom Requirement "${label}": Required limit ($${requiredLimit.toLocaleString()}) but coverage was not found on the certificate.`
+          );
+        } else if (Number(extractedValue) < requiredLimit) {
+          errors.push(
+            `Custom Requirement "${label}": Extracted limit ($${Number(extractedValue).toLocaleString()}) is less than the required $${requiredLimit.toLocaleString()}.`
+          );
+        }
+      }
+    });
   }
 
   let finalStatus: "Compliant" | "Insufficient Coverage" | "Expired" | "Pending Upload" = "Compliant";

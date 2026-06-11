@@ -35,7 +35,7 @@ async function startServer() {
   // AI Scan Endpoint
   app.post("/api/scan-coi", async (req, res) => {
     try {
-      const { fileData, mimeType, fileName } = req.body;
+      const { fileData, mimeType, fileName, custom_requirements } = req.body;
 
       if (!fileData) {
         return res.status(400).json({ error: "No file content provided" });
@@ -54,6 +54,22 @@ async function startServer() {
           },
         };
 
+        const customObjProperties: Record<string, any> = {};
+        let customPromptText = "";
+        if (custom_requirements && Array.isArray(custom_requirements) && custom_requirements.length > 0) {
+          customPromptText = `\n\nAdditionally, we have the following custom insurance coverages to evaluate. For each, extract the numerical limit (integer only, or null if not found on the certificate). Deliver them inside a "custom_extractions" record mapping each of these exact key-label names to their numerical extracted limit values:
+${custom_requirements.map((req: any) => `- "${req.label}"`).join("\n")}`;
+
+          custom_requirements.forEach((req: any) => {
+            if (req.label) {
+              customObjProperties[req.label] = {
+                type: Type.NUMBER,
+                description: `Extracted policy limit for ${req.label} in USD. Must be a number or null if missing/not found.`
+              };
+            }
+          });
+        }
+
         const promptText = `You are an expert insurance auditor. Extract values solely from the standard ACORD 25 Certificate of Liability Insurance form layout. 
 Differentiate between the Commercial General Liability, Automobile Liability, and Workers Compensation sections. 
 
@@ -70,7 +86,7 @@ Extract:
 10. "employers_liability_disease_person": Employers' Liability: E.L. DISEASE - EA EMPLOYEE limit ($). Set to 0 if not found.
 11. "employers_liability_disease_limit": Employers' Liability: E.L. DISEASE - POLICY LIMIT ($). Set to 0 if not found.
 12. "professional_liability": Professional Liability (usually under other/additional lines) ($). Set to 0 if not found.
-13. "pollution_liability": Pollution Liability (usually under other/additional lines or endorsements) ($). Set to 0 if not found.
+13. "pollution_liability": Pollution Liability (usually under other/additional lines or endorsements) ($). Set to 0 if not found.${customPromptText}
 
 Strictly return ONLY the requested JSON schema.`;
 
@@ -95,6 +111,11 @@ Strictly return ONLY the requested JSON schema.`;
                 employers_liability_disease_limit: { type: Type.NUMBER },
                 professional_liability: { type: Type.NUMBER },
                 pollution_liability: { type: Type.NUMBER },
+                custom_extractions: {
+                  type: Type.OBJECT,
+                  properties: customObjProperties,
+                  description: "Key-value map of custom extractions mapping target label names to their parsed numeric limit values."
+                },
               },
               required: [
                 "insured_name",
@@ -201,6 +222,22 @@ Strictly return ONLY the requested JSON schema.`;
           pollLiabVal = 2000000;
         }
 
+        const customExtractions: Record<string, number | null> = {};
+        if (custom_requirements && Array.isArray(custom_requirements)) {
+          custom_requirements.forEach((req: any) => {
+            if (req.label) {
+              const reqLimit = Number(req.limit) || 0;
+              if (nameLower.includes("apex") || nameLower.includes("plumbing")) {
+                customExtractions[req.label] = reqLimit > 0 ? Math.round(reqLimit * 0.5) : null;
+              } else if (nameLower.includes("titan") || nameLower.includes("steel")) {
+                customExtractions[req.label] = null;
+              } else {
+                customExtractions[req.label] = reqLimit;
+              }
+            }
+          });
+        }
+
         // Simulate network/processing latency
         await new Promise((resolve) => setTimeout(resolve, 2000));
 
@@ -220,6 +257,7 @@ Strictly return ONLY the requested JSON schema.`;
             employers_liability_disease_limit: elDiseLim,
             professional_liability: profLiabVal,
             pollution_liability: pollLiabVal,
+            custom_extractions: customExtractions,
           },
           simulated: true,
           warning: gemError.message.includes("is not configured") 
@@ -230,6 +268,154 @@ Strictly return ONLY the requested JSON schema.`;
     } catch (err: any) {
       console.error("Scanning Error:", err);
       res.status(500).json({ error: err.message || "COI document scanning failed." });
+    }
+  });
+
+  // Prime Contract Exhibit Setup Extraction Endpoint (🧪 Experimental Feature)
+  app.post("/api/scan-contract", async (req, res) => {
+    try {
+      const { fileData, mimeType, fileName } = req.body;
+
+      if (!fileData) {
+        return res.status(400).json({ error: "No contract document data provided for AI scan" });
+      }
+
+      console.log(`Analyzing Prime Contract Exhibit "${fileName}" with mimeType "${mimeType}"...`);
+
+      try {
+        const ai = getGeminiClient();
+
+        const documentPart = {
+          inlineData: {
+            mimeType: mimeType || "application/pdf",
+            data: fileData,
+          },
+        };
+
+        const systemInstruction = `You are an expert construction insurance risk auditor. Your task is to extract required contractor baseline liability insurance limits from an owner-contractor legal agreement exhibit (typically an AIA Document Exhibit A). 
+CRITICAL INSTRUCTION: You must ignore Article A.2 'Owner's Insurance' entirely. Do not extract property, builder's risk, or owner liability values. You must focus exclusively on Article A.3 'Contractor's Required Insurance Coverage'. Extract the exact numeric dollar thresholds for Each Occurrence, General Aggregate, Products-Completed Operations, Automobile Combined Single Limit, Umbrella/Excess Liability, and the three Employers' Liability limits. If a field cannot be found or is marked as statutory/standard, default to the closest logical corporate baseline or return null.`;
+
+        const response = await ai.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: [documentPart, { text: "Scan the attached draft contract agreement and populate the insurance baseline thresholds schedule." }],
+          config: {
+            systemInstruction,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                projectName: { type: Type.STRING },
+                gl_occurrence: { type: Type.NUMBER },
+                gl_aggregate: { type: Type.NUMBER },
+                gl_products_completed: { type: Type.NUMBER },
+                auto_limit: { type: Type.NUMBER },
+                umbrella_limit: { type: Type.NUMBER },
+                employers_liability_accident: { type: Type.NUMBER },
+                employers_liability_disease_person: { type: Type.NUMBER },
+                employers_liability_disease_limit: { type: Type.NUMBER },
+                workers_comp: { type: Type.BOOLEAN }
+              },
+              required: [
+                "projectName",
+                "gl_occurrence",
+                "gl_aggregate",
+                "gl_products_completed",
+                "auto_limit",
+                "umbrella_limit",
+                "employers_liability_accident",
+                "employers_liability_disease_person",
+                "employers_liability_disease_limit",
+                "workers_comp"
+              ],
+            },
+          },
+        });
+
+        const textResponse = response.text;
+        if (textResponse) {
+          console.log("Raw Gemini Contract Scan Output:", textResponse);
+          const parsedData = JSON.parse(textResponse.trim());
+          return res.json({ success: true, data: parsedData, simulated: false });
+        } else {
+          throw new Error("Empty response text from Gemini during contract analysis");
+        }
+      } catch (gemError: any) {
+        console.warn("Real Gemini Contract Scanning failed or unconfigured. Fallback to AI Simulator...", gemError.message);
+
+        // Simulated responses for experimental/demonstration scenarios
+        let pName = "Evergreen Commercial Complex";
+        let glOccVal = 2000000;
+        let glAggVal = 4000000;
+        let glProdVal = 2000000;
+        let autoLimitVal = 1000000;
+        let umbrellaLimitVal = 5000000;
+        let elAccidentVal = 1000000;
+        let elDiseasePersonVal = 1000000;
+        let elDiseaseLimitVal = 1000000;
+        let wcRequiredVal = true;
+
+        const nameLower = (fileName || "").toLowerCase();
+        if (nameLower.includes("aurora") || nameLower.includes("luxury")) {
+          pName = "Aurora Luxury Suites Phase II";
+          glOccVal = 2500000;
+          glAggVal = 5000000;
+          glProdVal = 2500000;
+          autoLimitVal = 1500000;
+          umbrellaLimitVal = 2000000;
+          elAccidentVal = 1000000;
+          elDiseasePersonVal = 1000000;
+          elDiseaseLimitVal = 1000000;
+          wcRequiredVal = true;
+        } else if (nameLower.includes("skyline") || nameLower.includes("apartments")) {
+          pName = "Skyline Apartments Masterplan";
+          glOccVal = 5000000;
+          glAggVal = 10000000;
+          glProdVal = 5000000;
+          autoLimitVal = 2000000;
+          umbrellaLimitVal = 10000000;
+          elAccidentVal = 2000000;
+          elDiseasePersonVal = 2000000;
+          elDiseaseLimitVal = 2000000;
+          wcRequiredVal = true;
+        } else if (nameLower.includes("minimal") || nameLower.includes("low")) {
+          pName = "Summit Warehouse Canopy Setup";
+          glOccVal = 1000000;
+          glAggVal = 2000000;
+          glProdVal = 1000000;
+          autoLimitVal = 1000000;
+          umbrellaLimitVal = 0;
+          elAccidentVal = 500000;
+          elDiseasePersonVal = 500000;
+          elDiseaseLimitVal = 500000;
+          wcRequiredVal = false;
+        }
+
+        // Simulate reading & analysis processing lag
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        return res.json({
+          success: true,
+          data: {
+            projectName: pName,
+            gl_occurrence: glOccVal,
+            gl_aggregate: glAggVal,
+            gl_products_completed: glProdVal,
+            auto_limit: autoLimitVal,
+            umbrella_limit: umbrellaLimitVal,
+            employers_liability_accident: elAccidentVal,
+            employers_liability_disease_person: elDiseasePersonVal,
+            employers_liability_disease_limit: elDiseaseLimitVal,
+            workers_comp: wcRequiredVal
+          },
+          simulated: true,
+          warning: gemError.message.includes("is not configured") 
+            ? "Using simulated AI extraction because GEMINI_API_KEY is not set in Secrets." 
+            : `AI Simulator engaged: ${gemError.message}`,
+        });
+      }
+    } catch (err: any) {
+      console.error("Contract Scanning Route Error:", err);
+      res.status(500).json({ error: err.message || "Contract parsing failed." });
     }
   });
 

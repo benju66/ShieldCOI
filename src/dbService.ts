@@ -118,9 +118,113 @@ export async function updateSubcontractor(
   const path = `${PROJECTS_COL}/${projectId}/subcontractors/${subId}`;
   try {
     const dClient = doc(db, PROJECTS_COL, projectId, "subcontractors", subId);
+    const snap = await getDoc(dClient);
+    let finalUpdates = { ...updates };
+    
+    if (snap.exists()) {
+      const currentSub = snap.data() as Subcontractor;
+      const isOverrideActive = finalUpdates.manual_override !== undefined 
+        ? finalUpdates.manual_override 
+        : currentSub.manual_override;
+      
+      if (isOverrideActive) {
+        finalUpdates.compliance_status = "Approved Exception";
+      }
+    } else {
+      if (finalUpdates.manual_override) {
+        finalUpdates.compliance_status = "Approved Exception";
+      }
+    }
+    await updateDoc(dClient, finalUpdates);
+
+    if (finalUpdates.compliance_status === "Compliant") {
+      const companyName = (snap.exists() ? (snap.data() as Subcontractor).company_name : "") || "Subcontractor";
+      const notifsCol = collection(db, NOTIFICATIONS_COL);
+      const snapNotifs = await getDocs(notifsCol);
+      for (const d of snapNotifs.docs) {
+        const nData = d.data() as Notification;
+        if (
+          (nData.resolved === false || nData.resolved === undefined) &&
+          (nData.project_id === projectId || nData.subcontractor_name === companyName)
+        ) {
+          await updateDoc(doc(db, NOTIFICATIONS_COL, d.id), { resolved: true });
+        }
+      }
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, path);
+  }
+}
+
+/**
+ * Update top-level project specifications
+ */
+export async function updateProject(
+  projectId: string,
+  updates: Partial<Project>
+): Promise<void> {
+  const path = `${PROJECTS_COL}/${projectId}`;
+  try {
+    const dClient = doc(db, PROJECTS_COL, projectId);
     await updateDoc(dClient, updates);
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);
+    throw err;
+  }
+}
+
+/**
+ * Safely remove a subcontractor and all nested COIs
+ */
+export async function deleteSubcontractor(
+  projectId: string,
+  subId: string
+): Promise<void> {
+  const path = `${PROJECTS_COL}/${projectId}/subcontractors/${subId}`;
+  try {
+    // 1. Fetch all child COI documents inside subcontractor's subcollection
+    const coisColRef = collection(db, PROJECTS_COL, projectId, "subcontractors", subId, "cois");
+    const coisSnap = await getDocs(coisColRef);
+    
+    // 2. Delete each nested COI document
+    for (const d of coisSnap.docs) {
+      await deleteDoc(doc(db, PROJECTS_COL, projectId, "subcontractors", subId, "cois", d.id));
+    }
+
+    // 3. Delete the subcontractor document
+    await deleteDoc(doc(db, PROJECTS_COL, projectId, "subcontractors", subId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
+    throw err;
+  }
+}
+
+/**
+ * cascading project deletion
+ */
+export async function deleteProject(projectId: string): Promise<void> {
+  const path = `${PROJECTS_COL}/${projectId}`;
+  try {
+    // 1. Fetch all subcontractors belonging to the project
+    const subsColRef = collection(db, PROJECTS_COL, projectId, "subcontractors");
+    const subsSnap = await getDocs(subsColRef);
+
+    // 2. Clear all nested entities under subcontractors
+    for (const subDoc of subsSnap.docs) {
+      const subId = subDoc.id;
+      const coisColRef = collection(db, PROJECTS_COL, projectId, "subcontractors", subId, "cois");
+      const coisSnap = await getDocs(coisColRef);
+      for (const coiDoc of coisSnap.docs) {
+        await deleteDoc(doc(db, PROJECTS_COL, projectId, "subcontractors", subId, "cois", coiDoc.id));
+      }
+      await deleteDoc(doc(db, PROJECTS_COL, projectId, "subcontractors", subId));
+    }
+
+    // 3. Delete parent project document
+    await deleteDoc(doc(db, PROJECTS_COL, projectId));
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
+    throw err;
   }
 }
 
@@ -201,11 +305,69 @@ export async function submitCoiRecord(
     const subSnap = await getDoc(subRef);
     if (subSnap.exists()) {
       const sub = subSnap.data() as Subcontractor;
-      let targetStatus = evaluation.status;
-      if (sub.manual_override) {
-        targetStatus = "Compliant"; // Manual override forces compliant compliance
+      let targetStatus: Subcontractor["compliance_status"] = evaluation.status;
+      let manualOverride = sub.manual_override;
+      let overrideNotes = sub.override_notes || "";
+      let waiverReasonType = sub.waiver_reason_type || null;
+      let waiverAuthorizedBy = sub.waiver_authorized_by || null;
+      let waiverExpirationDate = sub.waiver_expiration_date || null;
+
+      if (manualOverride) {
+        if (evaluation.status === "Compliant") {
+          manualOverride = false;
+          targetStatus = "Compliant";
+          overrideNotes = "";
+          waiverReasonType = null;
+          waiverAuthorizedBy = null;
+          waiverExpirationDate = null;
+        } else {
+          const currentDateStr = "2026-06-11";
+          const today = new Date(currentDateStr);
+          let isWaiverExpired = false;
+
+          if (waiverExpirationDate) {
+            const expDate = new Date(waiverExpirationDate);
+            if (expDate <= today) {
+              isWaiverExpired = true;
+            }
+          }
+
+          if (isWaiverExpired) {
+            manualOverride = false;
+            targetStatus = "Expired";
+            overrideNotes = "";
+            waiverReasonType = null;
+            waiverAuthorizedBy = null;
+            waiverExpirationDate = null;
+          } else {
+            targetStatus = "Approved Exception";
+          }
+        }
       }
-      await updateDoc(subRef, { compliance_status: targetStatus });
+
+      await updateDoc(subRef, {
+        compliance_status: targetStatus,
+        manual_override: manualOverride,
+        override_notes: overrideNotes,
+        waiver_reason_type: waiverReasonType,
+        waiver_authorized_by: waiverAuthorizedBy,
+        waiver_expiration_date: waiverExpirationDate,
+      });
+
+      if (targetStatus === "Compliant") {
+        const subName = sub.company_name || (subSnap.exists() ? (subSnap.data() as Subcontractor).company_name : "Subcontractor");
+        const notifsCol = collection(db, NOTIFICATIONS_COL);
+        const snapNotifs = await getDocs(notifsCol);
+        for (const d of snapNotifs.docs) {
+          const nData = d.data() as Notification;
+          if (
+            (nData.resolved === false || nData.resolved === undefined) &&
+            (nData.project_id === projectId || nData.subcontractor_name === subName)
+          ) {
+            await updateDoc(doc(db, NOTIFICATIONS_COL, d.id), { resolved: true });
+          }
+        }
+      }
     }
 
     // 4. Create Notifications for errors or status locks
@@ -221,7 +383,7 @@ export async function submitCoiRecord(
         project_name: project.name,
         subcontractor_name: subName,
         type: alertType,
-        message: `Alert: ${subName} COI scanned with validation errors. Standard notification drafted to risk admin.`,
+        message: "Draft email message ready. Click to view and copy.",
       });
     }
 
@@ -247,11 +409,16 @@ export async function getNotifications(): Promise<Notification[]> {
 }
 
 export async function createNotification(
-  notif: Omit<Notification, "id" | "timestamp">
+  notif: Omit<Notification, "id" | "timestamp" | "resolved"> & { resolved?: boolean }
 ): Promise<Notification> {
   const id = "notif_" + Math.random().toString(36).substring(2, 9);
   const now = new Date().toISOString();
-  const newNotif: Notification = { ...notif, id, timestamp: now };
+  const newNotif: Notification = {
+    ...notif,
+    id,
+    timestamp: now,
+    resolved: false,
+  };
 
   try {
     await setDoc(doc(db, NOTIFICATIONS_COL, id), newNotif);

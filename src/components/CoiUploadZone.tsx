@@ -19,8 +19,11 @@ interface CoiUploadZoneProps {
     file_name: string;
     simulated: boolean;
     warning?: string;
+    extraction_method?: "AI_Scan" | "Manual_Entry";
+    custom_extractions?: Record<string, number | null>;
   }) => void;
   onScanStart: () => void;
+  customRequirements?: { id: string; label: string; limit: number }[];
 }
 
 const SAMPLE_FILES = [
@@ -41,14 +44,38 @@ const SAMPLE_FILES = [
   },
 ];
 
-export default function CoiUploadZone({ onScanComplete, onScanStart }: CoiUploadZoneProps) {
+export default function CoiUploadZone({ onScanComplete, onScanStart, customRequirements }: CoiUploadZoneProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingText, setLoadingText] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const triggerManualEntry = () => {
+    setError(null);
+    onScanComplete({
+      insured_name: "",
+      gl_each_occurrence: 0,
+      gl_general_aggregate: 0,
+      auto_combined_single_limit: 0,
+      workers_comp_statutory: false,
+      policy_expiration_date: "2026-06-11", // Default date fallback to match today's date context
+      gl_products_completed: 0,
+      umbrella_limit: 0,
+      employers_liability_accident: 0,
+      employers_liability_disease_person: 0,
+      employers_liability_disease_limit: 0,
+      professional_liability: 0,
+      pollution_liability: 0,
+      file_name: "Manual_Entry_Document.pdf",
+      simulated: false,
+      extraction_method: "Manual_Entry",
+    });
+  };
 
   const processFile = async (file: File) => {
     if (loading) return;
+    setError(null);
 
     try {
       setLoading(true);
@@ -73,6 +100,7 @@ export default function CoiUploadZone({ onScanComplete, onScanStart }: CoiUpload
               fileData: base64Bytes,
               mimeType: file.type || "image/png",
               fileName: file.name,
+              custom_requirements: customRequirements,
             }),
           });
 
@@ -89,6 +117,7 @@ export default function CoiUploadZone({ onScanComplete, onScanStart }: CoiUpload
                 file_name: file.name,
                 simulated: !!responseData.simulated,
                 warning: responseData.warning,
+                extraction_method: "AI_Scan",
               });
               setLoading(false);
             }, 800);
@@ -97,18 +126,18 @@ export default function CoiUploadZone({ onScanComplete, onScanStart }: CoiUpload
           }
         } catch (serverErr: any) {
           console.error("Scanning request failed:", serverErr);
-          alert(`Scanning Error: ${serverErr.message}`);
+          setError("Scanning Unsuccessful: Document text could not be reliably extracted by AI.");
           setLoading(false);
         }
       };
 
       reader.onerror = () => {
-        alert("Failed to read file.");
+        setError("Scanning Unsuccessful: Document text could not be reliably extracted by AI.");
         setLoading(false);
       };
     } catch (err: any) {
       console.error(err);
-      alert("Error preparing file selection.");
+      setError("Scanning Unsuccessful: Document text could not be reliably extracted by AI.");
       setLoading(false);
     }
   };
@@ -139,6 +168,7 @@ export default function CoiUploadZone({ onScanComplete, onScanStart }: CoiUpload
   // Simulating a file upload for samples
   const handleSampleSelect = async (sampleName: string) => {
     if (loading) return;
+    setError(null);
     setLoading(true);
     onScanStart();
     setLoadingText("Simulating file stream payload...");
@@ -155,6 +185,7 @@ export default function CoiUploadZone({ onScanComplete, onScanStart }: CoiUpload
           fileData: "U0FNUExFX0RBVEE=", // short mock base64
           mimeType: "image/png",
           fileName: sampleName,
+          custom_requirements: customRequirements,
         }),
       });
 
@@ -167,6 +198,7 @@ export default function CoiUploadZone({ onScanComplete, onScanStart }: CoiUpload
             file_name: sampleName,
             simulated: !!responseData.simulated,
             warning: responseData.warning,
+            extraction_method: "AI_Scan",
           });
           setLoading(false);
         }, 1000);
@@ -174,7 +206,8 @@ export default function CoiUploadZone({ onScanComplete, onScanStart }: CoiUpload
         throw new Error(responseData.error || "Scanning sample failed.");
       }
     } catch (error: any) {
-      alert(`Simulation Error: ${error.message}`);
+      console.error("Sample simulation failed:", error);
+      setError("Scanning Unsuccessful: Document text could not be reliably extracted by AI.");
       setLoading(false);
     }
   };
@@ -185,7 +218,30 @@ export default function CoiUploadZone({ onScanComplete, onScanStart }: CoiUpload
         Verification Scanning Desk (ACORD 25 Parsing)
       </h3>
 
-      {loading ? (
+      {error ? (
+        <div id="coi-upload-error-box" className="p-4 bg-amber-50/50 border border-amber-200 rounded-lg text-center flex flex-col items-center justify-center space-y-3">
+          <AlertTriangle className="h-8 w-8 text-amber-600 mb-1" />
+          <p className="text-xs font-bold text-amber-900">
+            Scanning Unsuccessful: Document text could not be reliably extracted by AI.
+          </p>
+          <div className="flex space-x-2 mt-2 w-full justify-center">
+            <button
+              onClick={() => setError(null)}
+              type="button"
+              className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-705 hover:text-slate-900 rounded font-bold text-[10.5px] shadow-xs cursor-pointer flex items-center space-x-1"
+            >
+              <RefreshCw className="h-3 w-3 mr-1" /> Retry Upload
+            </button>
+            <button
+              onClick={triggerManualEntry}
+              type="button"
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-[10.5px] shadow-xs cursor-pointer flex items-center space-x-1"
+            >
+              <span>⌨️ Enter Insurance Data Manually</span>
+            </button>
+          </div>
+        </div>
+      ) : loading ? (
         <div id="coi-upload-loading" className="flex flex-col items-center justify-center py-8 border-2 border-dashed border-blue-500/30 rounded-lg bg-blue-50/50 animate-pulse text-center">
           <RefreshCw className="h-8 w-8 text-blue-600 animate-spin mb-3" />
           <p className="text-slate-800 text-xs font-bold px-4">{loadingText}</p>
@@ -223,6 +279,17 @@ export default function CoiUploadZone({ onScanComplete, onScanStart }: CoiUpload
             >
               Browse Files
             </button>
+
+            {/* Permanent text link at the base of drop zone */}
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerManualEntry();
+              }}
+              className="mt-4 text-[11px] text-indigo-600 hover:text-indigo-800 underline font-semibold cursor-pointer transition-colors"
+            >
+              Skip scanning and enter manually
+            </div>
           </div>
 
           <div id="coi-upload-samples" className="mt-4 pt-3 border-t border-slate-200">
