@@ -9,6 +9,7 @@ interface VerificationDrawerProps {
   project: Project;
   subContractorId: string;
   subContractorName: string;
+  subContractorTrade?: string;
   extractedData: {
     insured_name: string;
     gl_each_occurrence: number;
@@ -16,6 +17,13 @@ interface VerificationDrawerProps {
     auto_combined_single_limit: number;
     workers_comp_statutory: boolean;
     policy_expiration_date: string;
+    gl_products_completed?: number;
+    umbrella_limit?: number;
+    employers_liability_accident?: number;
+    employers_liability_disease_person?: number;
+    employers_liability_disease_limit?: number;
+    professional_liability?: number;
+    pollution_liability?: number;
     file_name: string;
     simulated: boolean;
     warning?: string;
@@ -29,6 +37,7 @@ export default function VerificationDrawer({
   project,
   subContractorId,
   subContractorName,
+  subContractorTrade = "Other Trades",
   extractedData,
   onSave,
 }: VerificationDrawerProps) {
@@ -48,13 +57,45 @@ export default function VerificationDrawer({
 
   // Run compliance analysis engine
   const req = project.requirements;
-  const analysis = verifyCompliance(project, extractedData);
+  const trade = subContractorTrade || "Other Trades";
+  const analysis = verifyCompliance(project, extractedData, trade);
 
   // Compare each field to see if it meets threshold
   const isGlOccPassed = extractedData.gl_each_occurrence >= req.gl_occurrence;
   const isGlAggPassed = extractedData.gl_general_aggregate >= req.gl_aggregate;
   const isAutoPassed = extractedData.auto_combined_single_limit >= req.auto_limit;
   const isWcPassed = !req.workers_comp || extractedData.workers_comp_statutory;
+
+  const isGlProdPassed = (extractedData.gl_products_completed ?? 0) >= (req.gl_products_completed ?? 2000000);
+
+  // Umbrella variable trade-specific calculation
+  let requiredUmbrella = req.umbrella_limit ?? 1000000;
+  if (["Concrete (Precast)", "Concrete (with Crane)", "Rough Carpentry (with Crane)", "Elevators"].includes(trade)) {
+    requiredUmbrella = 10000000;
+  } else if ([
+    "Environmental", "Earthwork", "Concrete (Standard)", "Masonry", "Rough Carpentry (Standard)",
+    "Siding", "Roofing", "Windows", "Drywall", "Fire Sprinkler", "Plumbing", "HVAC", "Electrical"
+  ].includes(trade)) {
+    requiredUmbrella = 5000000;
+  } else if (["Surveying", "Pool", "Other Trades"].includes(trade)) {
+    requiredUmbrella = 1000000;
+  }
+  const isUmbrellaPassed = (extractedData.umbrella_limit ?? 0) >= requiredUmbrella;
+
+  const isElAccidentPassed = (extractedData.employers_liability_accident ?? 0) >= (req.employers_liability_accident ?? 1000000);
+  const isElDiseasePersonPassed = (extractedData.employers_liability_disease_person ?? 0) >= (req.employers_liability_disease_person ?? 1000000);
+  const isElDiseaseLimitPassed = (extractedData.employers_liability_disease_limit ?? 0) >= (req.employers_liability_disease_limit ?? 1000000);
+
+  const professionalTrades = ["Environmental", "Surveying", "Earthwork", "Pool", "Fire Sprinkler", "Plumbing", "HVAC", "Electrical"];
+  const isProfessionalRequired = professionalTrades.includes(trade);
+  const isProfessionalPassed = (extractedData.professional_liability ?? 0) >= 2000000;
+
+  const pollutionTrades = [
+    "Environmental", "Earthwork", "Concrete (Precast)", "Concrete (Standard)", "Masonry",
+    "Rough Carpentry (Standard)", "Siding", "Roofing", "Windows", "Drywall", "Plumbing", "HVAC"
+  ];
+  const isPollutionRequired = pollutionTrades.includes(trade);
+  const isPollutionPassed = (extractedData.pollution_liability ?? 0) >= 2000000;
 
   const currentYearDateStr = "2026-06-11";
   const isNotExpired = new Date(extractedData.policy_expiration_date) > new Date(currentYearDateStr);
@@ -285,6 +326,216 @@ export default function VerificationDrawer({
                   )}
                 </div>
               </div>
+
+              {/* GL Products-Completed Aggregate */}
+              <div
+                id="match-row-gl-products-completed"
+                className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
+                  isGlProdPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                }`}
+              >
+                <div className="col-span-5">
+                  <p className="text-xs font-bold text-slate-800">GL Products-Completed Aggregate</p>
+                </div>
+                <div className="col-span-3 text-right">
+                  <p className={`text-xs font-mono font-bold ${isGlProdPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                    ${(extractedData.gl_products_completed ?? 0).toLocaleString()}
+                  </p>
+                </div>
+                <div className="col-span-3 text-right">
+                  <p className="text-xs font-mono text-slate-500">
+                    ${(req.gl_products_completed ?? 2000000).toLocaleString()}
+                  </p>
+                </div>
+                <div className="col-span-1 flex justify-center">
+                  {isGlProdPassed ? (
+                    <Check className="h-4 w-4 text-emerald-600" />
+                  ) : (
+                    <span className="text-[10px] text-red-600 font-bold uppercase">FAIL</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Umbrella Limit */}
+              <div
+                id="match-row-umbrella-limit"
+                className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
+                  isUmbrellaPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                }`}
+              >
+                <div className="col-span-5">
+                  <p className="text-xs font-bold text-slate-800">Umbrella / Excess Liability</p>
+                  <p className="text-[10px] text-slate-500">Calculated for trade: {trade}</p>
+                </div>
+                <div className="col-span-3 text-right">
+                  <p className={`text-xs font-mono font-bold ${isUmbrellaPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                    ${(extractedData.umbrella_limit ?? 0).toLocaleString()}
+                  </p>
+                </div>
+                <div className="col-span-3 text-right">
+                  <p className="text-xs font-mono text-slate-500">
+                    ${requiredUmbrella.toLocaleString()}
+                  </p>
+                </div>
+                <div className="col-span-1 flex justify-center">
+                  {isUmbrellaPassed ? (
+                    <Check className="h-4 w-4 text-emerald-600" />
+                  ) : (
+                    <span className="text-[10px] text-red-600 font-bold uppercase">FAIL</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Employers' Liability Accident */}
+              <div
+                id="match-row-el-accident"
+                className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
+                  isElAccidentPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                }`}
+              >
+                <div className="col-span-5">
+                  <p className="text-xs font-bold text-slate-800">Employers' Liability: Accident</p>
+                </div>
+                <div className="col-span-3 text-right">
+                  <p className={`text-xs font-mono font-bold ${isElAccidentPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                    ${(extractedData.employers_liability_accident ?? 0).toLocaleString()}
+                  </p>
+                </div>
+                <div className="col-span-3 text-right">
+                  <p className="text-xs font-mono text-slate-500">
+                    ${(req.employers_liability_accident ?? 1000000).toLocaleString()}
+                  </p>
+                </div>
+                <div className="col-span-1 flex justify-center">
+                  {isElAccidentPassed ? (
+                    <Check className="h-4 w-4 text-emerald-600" />
+                  ) : (
+                    <span className="text-[10px] text-red-600 font-bold uppercase">FAIL</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Employers' Liability Disease Per Person */}
+              <div
+                id="match-row-el-disease-person"
+                className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
+                  isElDiseasePersonPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                }`}
+              >
+                <div className="col-span-5">
+                  <p className="text-xs font-bold text-slate-800">Employers' Liability: Disease (Per Person)</p>
+                </div>
+                <div className="col-span-3 text-right">
+                  <p className={`text-xs font-mono font-bold ${isElDiseasePersonPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                    ${(extractedData.employers_liability_disease_person ?? 0).toLocaleString()}
+                  </p>
+                </div>
+                <div className="col-span-3 text-right">
+                  <p className="text-xs font-mono text-slate-500">
+                    ${(req.employers_liability_disease_person ?? 1000000).toLocaleString()}
+                  </p>
+                </div>
+                <div className="col-span-1 flex justify-center">
+                  {isElDiseasePersonPassed ? (
+                    <Check className="h-4 w-4 text-emerald-600" />
+                  ) : (
+                    <span className="text-[10px] text-red-600 font-bold uppercase">FAIL</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Employers' Liability Disease Policy Limit */}
+              <div
+                id="match-row-el-disease-limit"
+                className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
+                  isElDiseaseLimitPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                }`}
+              >
+                <div className="col-span-5">
+                  <p className="text-xs font-bold text-slate-800">Employers' Liability: Disease (Policy Limit)</p>
+                </div>
+                <div className="col-span-3 text-right">
+                  <p className={`text-xs font-mono font-bold ${isElDiseaseLimitPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                    ${(extractedData.employers_liability_disease_limit ?? 0).toLocaleString()}
+                  </p>
+                </div>
+                <div className="col-span-3 text-right">
+                  <p className="text-xs font-mono text-slate-500">
+                    ${(req.employers_liability_disease_limit ?? 1000000).toLocaleString()}
+                  </p>
+                </div>
+                <div className="col-span-1 flex justify-center">
+                  {isElDiseaseLimitPassed ? (
+                    <Check className="h-4 w-4 text-emerald-600" />
+                  ) : (
+                    <span className="text-[10px] text-red-600 font-bold uppercase">FAIL</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Professional Liability (Conditional) */}
+              {isProfessionalRequired && (
+                <div
+                  id="match-row-professional-liability"
+                  className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
+                    isProfessionalPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                  }`}
+                >
+                  <div className="col-span-5">
+                    <p className="text-xs font-bold text-slate-800">Professional Liability</p>
+                    <p className="text-[10px] text-slate-500">Required for trade: {trade}</p>
+                  </div>
+                  <div className="col-span-3 text-right">
+                    <p className={`text-xs font-mono font-bold ${isProfessionalPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                      ${(extractedData.professional_liability ?? 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="col-span-3 text-right">
+                    <p className="text-xs font-mono text-slate-500">
+                      $2,000,000
+                    </p>
+                  </div>
+                  <div className="col-span-1 flex justify-center">
+                    {isProfessionalPassed ? (
+                      <Check className="h-4 w-4 text-emerald-600" />
+                    ) : (
+                      <span className="text-[10px] text-red-600 font-bold uppercase">FAIL</span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Pollution Liability (Conditional) */}
+              {isPollutionRequired && (
+                <div
+                  id="match-row-pollution-liability"
+                  className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
+                    isPollutionPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                  }`}
+                >
+                  <div className="col-span-5">
+                    <p className="text-xs font-bold text-slate-800">Pollution Liability</p>
+                    <p className="text-[10px] text-slate-500">Required for trade: {trade}</p>
+                  </div>
+                  <div className="col-span-3 text-right">
+                    <p className={`text-xs font-mono font-bold ${isPollutionPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                      ${(extractedData.pollution_liability ?? 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="col-span-3 text-right">
+                    <p className="text-xs font-mono text-slate-500">
+                      $2,000,000
+                    </p>
+                  </div>
+                  <div className="col-span-1 flex justify-center">
+                    {isPollutionPassed ? (
+                      <Check className="h-4 w-4 text-emerald-600" />
+                    ) : (
+                      <span className="text-[10px] text-red-600 font-bold uppercase">FAIL</span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

@@ -9,6 +9,13 @@ interface CoiUploadZoneProps {
     auto_combined_single_limit: number;
     workers_comp_statutory: boolean;
     policy_expiration_date: string;
+    gl_products_completed?: number;
+    umbrella_limit?: number;
+    employers_liability_accident?: number;
+    employers_liability_disease_person?: number;
+    employers_liability_disease_limit?: number;
+    professional_liability?: number;
+    pollution_liability?: number;
     file_name: string;
     simulated: boolean;
     warning?: string;

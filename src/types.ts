@@ -4,6 +4,11 @@ export interface ProjectRequirements {
   auto_limit: number;
   workers_comp: boolean;
   warn_days_out: number;
+  gl_products_completed: number;
+  umbrella_limit: number;
+  employers_liability_accident: number;
+  employers_liability_disease_person: number;
+  employers_liability_disease_limit: number;
 }
 
 export interface Project {
@@ -15,11 +20,33 @@ export interface Project {
   createdAt: string;
 }
 
+export type TradeType =
+  | "Environmental"
+  | "Surveying"
+  | "Earthwork"
+  | "Concrete (Precast)"
+  | "Concrete (with Crane)"
+  | "Concrete (Standard)"
+  | "Masonry"
+  | "Rough Carpentry (with Crane)"
+  | "Rough Carpentry (Standard)"
+  | "Siding"
+  | "Roofing"
+  | "Windows"
+  | "Drywall"
+  | "Pool"
+  | "Elevators"
+  | "Fire Sprinkler"
+  | "Plumbing"
+  | "HVAC"
+  | "Electrical"
+  | "Other Trades";
+
 export interface Subcontractor {
   id: string;
   project_id: string;
   company_name: string;
-  trade: string;
+  trade: TradeType | string;
   contract_value: number;
   compliance_status: "Compliant" | "Insufficient Coverage" | "Expired" | "Pending Upload";
   manual_override: boolean;
@@ -39,6 +66,13 @@ export interface CoiRecord {
   auto_combined_single_limit_extracted: number;
   workers_comp_statutory_extracted: boolean;
   policy_expiration_date_extracted: string; // YYYY-MM-DD
+  gl_products_completed_extracted: number;
+  umbrella_limit_extracted: number;
+  employers_liability_accident_extracted: number;
+  employers_liability_disease_person_extracted: number;
+  employers_liability_disease_limit_extracted: number;
+  professional_liability_extracted: number;
+  pollution_liability_extracted: number;
   validation_errors: string[];
 }
 

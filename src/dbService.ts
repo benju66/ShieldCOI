@@ -156,6 +156,14 @@ export async function submitCoiRecord(
     throw new Error(`Project matching ID ${projectId} was not found.`);
   }
 
+  const subRef = doc(db, PROJECTS_COL, projectId, "subcontractors", subcontractorId);
+  const subSnap = await getDoc(subRef);
+  if (!subSnap.exists()) {
+    throw new Error(`Subcontractor matching ID ${subcontractorId} was not found.`);
+  }
+  const subcontractor = subSnap.data() as Subcontractor;
+  const trade = subcontractor.trade || "Other Trades";
+
   // 2. Perform compliance checks
   const evaluation = verifyCompliance(project, {
     insured_name: coiData.insured_extracted_name,
@@ -164,7 +172,14 @@ export async function submitCoiRecord(
     auto_combined_single_limit: coiData.auto_combined_single_limit_extracted,
     workers_comp_statutory: coiData.workers_comp_statutory_extracted,
     policy_expiration_date: coiData.policy_expiration_date_extracted,
-  });
+    gl_products_completed: coiData.gl_products_completed_extracted,
+    umbrella_limit: coiData.umbrella_limit_extracted,
+    employers_liability_accident: coiData.employers_liability_accident_extracted,
+    employers_liability_disease_person: coiData.employers_liability_disease_person_extracted,
+    employers_liability_disease_limit: coiData.employers_liability_disease_limit_extracted,
+    professional_liability: coiData.professional_liability_extracted,
+    pollution_liability: coiData.pollution_liability_extracted,
+  }, trade);
 
   const newCoi: CoiRecord = {
     ...coiData,
@@ -272,13 +287,18 @@ export async function seedInitialData(force = false): Promise<void> {
         auto_limit: 1000000,
         workers_comp: true,
         warn_days_out: 60,
+        gl_products_completed: 2000000,
+        umbrella_limit: 1000000,
+        employers_liability_accident: 1000000,
+        employers_liability_disease_person: 1000000,
+        employers_liability_disease_limit: 1000000,
       },
     });
 
     // Sub 1A - Compliant
     const sub1A = await createSubcontractor(p1.id, {
       company_name: "ACME Electrical Solutions LLC",
-      trade: "Electrical Package",
+      trade: "Electrical",
       contract_value: 385000,
     });
     // Create ACME COI Record
@@ -290,12 +310,19 @@ export async function seedInitialData(force = false): Promise<void> {
       auto_combined_single_limit_extracted: 1000000,
       workers_comp_statutory_extracted: true,
       policy_expiration_date_extracted: "2026-09-15", // In 96 days
+      gl_products_completed_extracted: 2000000,
+      umbrella_limit_extracted: 5000000, // Meets the $5M required override for Electrical trade
+      employers_liability_accident_extracted: 1000000,
+      employers_liability_disease_person_extracted: 1000000,
+      employers_liability_disease_limit_extracted: 1000000,
+      professional_liability_extracted: 2000000, // Meets professional liability required for Electrical
+      pollution_liability_extracted: 0,
     });
 
     // Sub 1B - Insufficient Coverage
     const sub1B = await createSubcontractor(p1.id, {
       company_name: "Apex Plumbing & Piping Co.",
-      trade: "Dry & Wet Piping Services",
+      trade: "Plumbing",
       contract_value: 240000,
     });
     await submitCoiRecord(p1.id, sub1B.id, {
@@ -306,12 +333,19 @@ export async function seedInitialData(force = false): Promise<void> {
       auto_combined_single_limit_extracted: 500000, // short of $1M req
       workers_comp_statutory_extracted: false, // missing wc
       policy_expiration_date_extracted: "2026-11-20",
+      gl_products_completed_extracted: 2000000,
+      umbrella_limit_extracted: 5000000,
+      employers_liability_accident_extracted: 1000000,
+      employers_liability_disease_person_extracted: 1000000,
+      employers_liability_disease_limit_extracted: 1000000,
+      professional_liability_extracted: 2000000,
+      pollution_liability_extracted: 2000000,
     });
 
     // Sub 1C - Expired
     const sub1C = await createSubcontractor(p1.id, {
       company_name: "Titan Structural Steel Corp",
-      trade: "Metal Framing & Decking",
+      trade: "Other Trades",
       contract_value: 710000,
     });
     await submitCoiRecord(p1.id, sub1C.id, {
@@ -322,6 +356,13 @@ export async function seedInitialData(force = false): Promise<void> {
       auto_combined_single_limit_extracted: 2000000,
       workers_comp_statutory_extracted: true,
       policy_expiration_date_extracted: "2026-05-10", // Expired Relative to June 11, 2026
+      gl_products_completed_extracted: 2000000,
+      umbrella_limit_extracted: 1000000,
+      employers_liability_accident_extracted: 1000000,
+      employers_liability_disease_person_extracted: 1000000,
+      employers_liability_disease_limit_extracted: 1000000,
+      professional_liability_extracted: 0,
+      pollution_liability_extracted: 0,
     });
 
     // Project 2
@@ -335,13 +376,18 @@ export async function seedInitialData(force = false): Promise<void> {
         auto_limit: 1000000,
         workers_comp: true,
         warn_days_out: 30,
+        gl_products_completed: 2000000,
+        umbrella_limit: 1000000,
+        employers_liability_accident: 1000000,
+        employers_liability_disease_person: 1000000,
+        employers_liability_disease_limit: 1000000,
       },
     });
 
     // Sub 2A - Compliant
     const sub2A = await createSubcontractor(p2.id, {
       company_name: "Solid Ground Concrete Works",
-      trade: "Foundation Concreting",
+      trade: "Concrete (Standard)",
       contract_value: 190000,
     });
     await submitCoiRecord(p2.id, sub2A.id, {
@@ -352,12 +398,19 @@ export async function seedInitialData(force = false): Promise<void> {
       auto_combined_single_limit_extracted: 1000000,
       workers_comp_statutory_extracted: true,
       policy_expiration_date_extracted: "2027-01-15",
+      gl_products_completed_extracted: 2000000,
+      umbrella_limit_extracted: 5000000, // Meets concrete trade limit 5M
+      employers_liability_accident_extracted: 1000000,
+      employers_liability_disease_person_extracted: 1000000,
+      employers_liability_disease_limit_extracted: 1000000,
+      professional_liability_extracted: 0,
+      pollution_liability_extracted: 2000000, // Meets concrete trade pollution limit 2M
     });
 
     // Sub 2B - Compliant via Exception (Manual Override)
     const sub2B = await createSubcontractor(p2.id, {
       company_name: "Vortex Mechanical Services",
-      trade: "HVAC & Ductwork Installation",
+      trade: "HVAC",
       contract_value: 125000,
     });
     // Add sub record with missing limit initially
@@ -369,6 +422,13 @@ export async function seedInitialData(force = false): Promise<void> {
       auto_combined_single_limit_extracted: 1000000,
       workers_comp_statutory_extracted: true,
       policy_expiration_date_extracted: "2026-11-01",
+      gl_products_completed_extracted: 1500000,
+      umbrella_limit_extracted: 1000000, // short of trade required umbrella
+      employers_liability_accident_extracted: 1000000,
+      employers_liability_disease_person_extracted: 1000000,
+      employers_liability_disease_limit_extracted: 1000000,
+      professional_liability_extracted: 2000000,
+      pollution_liability_extracted: 2000000,
     });
     // Update to show approved override
     await updateSubcontractor(p2.id, sub2B.id, {
@@ -384,17 +444,22 @@ export async function seedInitialData(force = false): Promise<void> {
       target_completion_date: "2026-10-01",
       requirements: {
         gl_occurrence: 3000000,
-        gl_aggregate: 5000000,
+        gl_aggregate: 5000005,
         auto_limit: 2000000,
         workers_comp: true,
         warn_days_out: 90,
+        gl_products_completed: 2000000,
+        umbrella_limit: 1000000,
+        employers_liability_accident: 1000000,
+        employers_liability_disease_person: 1000000,
+        employers_liability_disease_limit: 1000000,
       },
     });
 
     // Sub 3A - Pending
     await createSubcontractor(p3.id, {
       company_name: "Summit Roofing Specialists",
-      trade: "Roofing & Waterproofing Membrane",
+      trade: "Roofing",
       contract_value: 145000,
     });
 

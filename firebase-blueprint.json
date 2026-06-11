@@ -16,9 +16,25 @@
             "gl_aggregate": { "type": "number" },
             "auto_limit": { "type": "number" },
             "workers_comp": { "type": "boolean" },
-            "warn_days_out": { "type": "number" }
+            "warn_days_out": { "type": "number" },
+            "gl_products_completed": { "type": "number" },
+            "umbrella_limit": { "type": "number" },
+            "employers_liability_accident": { "type": "number" },
+            "employers_liability_disease_person": { "type": "number" },
+            "employers_liability_disease_limit": { "type": "number" }
           },
-          "required": ["gl_occurrence", "gl_aggregate", "auto_limit", "workers_comp", "warn_days_out"]
+          "required": [
+            "gl_occurrence",
+            "gl_aggregate",
+            "auto_limit",
+            "workers_comp",
+            "warn_days_out",
+            "gl_products_completed",
+            "umbrella_limit",
+            "employers_liability_accident",
+            "employers_liability_disease_person",
+            "employers_liability_disease_limit"
+          ]
         },
         "createdAt": { "type": "string", "format": "date-time" }
       },
@@ -57,6 +73,13 @@
         "auto_combined_single_limit_extracted": { "type": "number" },
         "workers_comp_statutory_extracted": { "type": "boolean" },
         "policy_expiration_date_extracted": { "type": "string", "format": "date" },
+        "gl_products_completed_extracted": { "type": "number" },
+        "umbrella_limit_extracted": { "type": "number" },
+        "employers_liability_accident_extracted": { "type": "number" },
+        "employers_liability_disease_person_extracted": { "type": "number" },
+        "employers_liability_disease_limit_extracted": { "type": "number" },
+        "professional_liability_extracted": { "type": "number" },
+        "pollution_liability_extracted": { "type": "number" },
         "validation_errors": {
           "type": "array",
           "items": { "type": "string" }

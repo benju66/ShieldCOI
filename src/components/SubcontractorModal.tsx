@@ -10,7 +10,7 @@ interface SubcontractorModalProps {
 
 export default function SubcontractorModal({ isOpen, onClose, projectName, onAdd }: SubcontractorModalProps) {
   const [companyName, setCompanyName] = useState("");
-  const [trade, setTrade] = useState("");
+  const [trade, setTrade] = useState("Environmental");
   const [contractValue, setContractValue] = useState(150000);
   const [submitting, setSubmitting] = useState(false);
 
@@ -84,15 +84,40 @@ export default function SubcontractorModal({ isOpen, onClose, projectName, onAdd
             <label htmlFor="subcontractor-trade-package" className="block text-[11px] font-bold text-slate-700 mb-1">
               Trade Scope Package *
             </label>
-            <input
+            <select
               id="subcontractor-trade-package"
-              type="text"
               required
               value={trade}
               onChange={(e) => setTrade(e.target.value)}
-              placeholder="e.g. Glass & Glazing, Windows"
-              className="w-full text-xs bg-slate-50 border border-slate-200 focus:bg-white focus:border-blue-500 focus:outline-none rounded p-2 text-slate-800"
-            />
+              className="w-full text-xs bg-slate-50 border border-slate-200 focus:bg-white focus:border-blue-500 focus:outline-none rounded p-2 text-slate-800 cursor-pointer"
+            >
+              {[
+                "Environmental",
+                "Surveying",
+                "Earthwork",
+                "Concrete (Precast)",
+                "Concrete (with Crane)",
+                "Concrete (Standard)",
+                "Masonry",
+                "Rough Carpentry (with Crane)",
+                "Rough Carpentry (Standard)",
+                "Siding",
+                "Roofing",
+                "Windows",
+                "Drywall",
+                "Pool",
+                "Elevators",
+                "Fire Sprinkler",
+                "Plumbing",
+                "HVAC",
+                "Electrical",
+                "Other Trades",
+              ].map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Contract Value */}

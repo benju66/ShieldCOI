@@ -68,6 +68,13 @@ export default function App() {
     auto_combined_single_limit: number;
     workers_comp_statutory: boolean;
     policy_expiration_date: string;
+    gl_products_completed?: number;
+    umbrella_limit?: number;
+    employers_liability_accident?: number;
+    employers_liability_disease_person?: number;
+    employers_liability_disease_limit?: number;
+    professional_liability?: number;
+    pollution_liability?: number;
     file_name: string;
     simulated: boolean;
     warning?: string;
@@ -198,6 +205,13 @@ export default function App() {
       auto_combined_single_limit_extracted: scannedPayload.auto_combined_single_limit,
       workers_comp_statutory_extracted: scannedPayload.workers_comp_statutory,
       policy_expiration_date_extracted: scannedPayload.policy_expiration_date,
+      gl_products_completed_extracted: scannedPayload.gl_products_completed ?? 0,
+      umbrella_limit_extracted: scannedPayload.umbrella_limit ?? 0,
+      employers_liability_accident_extracted: scannedPayload.employers_liability_accident ?? 0,
+      employers_liability_disease_person_extracted: scannedPayload.employers_liability_disease_person ?? 0,
+      employers_liability_disease_limit_extracted: scannedPayload.employers_liability_disease_limit ?? 0,
+      professional_liability_extracted: scannedPayload.professional_liability ?? 0,
+      pollution_liability_extracted: scannedPayload.pollution_liability ?? 0,
     });
 
     // 2. Commit override state if chosen
@@ -633,6 +647,7 @@ export default function App() {
         project={selectedProject!}
         subContractorId={activeSubForUpload?.id || ""}
         subContractorName={activeSubForUpload?.company_name || ""}
+        subContractorTrade={activeSubForUpload?.trade || "Other Trades"}
         extractedData={scannedPayload}
         onSave={handleAuditSave}
       />

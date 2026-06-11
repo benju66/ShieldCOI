@@ -17,6 +17,11 @@ export default function ProjectForm({ isOpen, onClose, onSave }: ProjectFormProp
   const [autoLimit, setAutoLimit] = useState(1000000);
   const [wcRequired, setWcRequired] = useState(true);
   const [warnDays, setWarnDays] = useState(60);
+  const [glProd, setGlProd] = useState(2000000);
+  const [umbrella, setUmbrella] = useState(1000000);
+  const [elAccident, setElAccident] = useState(1000000);
+  const [elDiseasePerson, setElDiseasePerson] = useState(1000000);
+  const [elDiseaseLimit, setElDiseaseLimit] = useState(1000000);
   const [saving, setSaving] = useState(false);
 
   if (!isOpen) return null;
@@ -40,6 +45,11 @@ export default function ProjectForm({ isOpen, onClose, onSave }: ProjectFormProp
           auto_limit: Number(autoLimit),
           workers_comp: wcRequired,
           warn_days_out: Number(warnDays),
+          gl_products_completed: Number(glProd),
+          umbrella_limit: Number(umbrella),
+          employers_liability_accident: Number(elAccident),
+          employers_liability_disease_person: Number(elDiseasePerson),
+          employers_liability_disease_limit: Number(elDiseaseLimit),
         },
       });
       // Reset
@@ -177,6 +187,86 @@ export default function ProjectForm({ isOpen, onClose, onSave }: ProjectFormProp
                   required
                   value={autoLimit}
                   onChange={(e) => setAutoLimit(Number(e.target.value))}
+                  className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
+                />
+              </div>
+
+              {/* General Liability Products-Completed Aggregate */}
+              <div>
+                <label htmlFor="gl-products-completed" className="block text-[10px] font-bold text-slate-600 mb-1">
+                  General Liability: Products-Completed Aggregate ($)
+                </label>
+                <input
+                  id="gl-products-completed"
+                  type="number"
+                  min="0"
+                  required
+                  value={glProd}
+                  onChange={(e) => setGlProd(Number(e.target.value))}
+                  className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
+                />
+              </div>
+
+              {/* Umbrella Limit */}
+              <div>
+                <label htmlFor="umbrella-limit" className="block text-[10px] font-bold text-slate-600 mb-1">
+                  Umbrella / Excess Liability Minimum ($)
+                </label>
+                <input
+                  id="umbrella-limit"
+                  type="number"
+                  min="0"
+                  required
+                  value={umbrella}
+                  onChange={(e) => setUmbrella(Number(e.target.value))}
+                  className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
+                />
+              </div>
+
+              {/* Employers' Liability Accident */}
+              <div>
+                <label htmlFor="el-accident" className="block text-[10px] font-bold text-slate-600 mb-1">
+                  Employers' Liability: Accident ($)
+                </label>
+                <input
+                  id="el-accident"
+                  type="number"
+                  min="0"
+                  required
+                  value={elAccident}
+                  onChange={(e) => setElAccident(Number(e.target.value))}
+                  className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
+                />
+              </div>
+
+              {/* Employers' Liability Disease Per Person */}
+              <div>
+                <label htmlFor="el-disease-person" className="block text-[10px] font-bold text-slate-600 mb-1">
+                  Employers' Liability: Disease (Per Person) ($)
+                </label>
+                <input
+                  id="el-disease-person"
+                  type="number"
+                  min="0"
+                  required
+                  value={elDiseasePerson}
+                  onChange={(e) => setElDiseasePerson(Number(e.target.value))}
+                  className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
+                />
+              </div>
+
+              {/* Employers' Liability Disease Policy Limit */}
+              <div>
+                <label htmlFor="el-disease-limit" className="block text-[10px] font-bold text-slate-600 mb-1">
+                  Employers' Liability: Disease (Policy Limit) ($)
+                </label>
+                <input
+                  id="el-disease-limit"
+                  type="number"
+                  min="0"
+                  required
+                  value={elDiseaseLimit}
+                  onChange={(e) => setElDiseaseLimit(Number(e.target.value))}
                   className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
                 />
               </div>

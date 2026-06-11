@@ -64,6 +64,13 @@ Extract:
 4. "auto_combined_single_limit": AUTOMOBILE LIABILITY - COMBINED SINGLE LIMIT (each accident) ($). Set to 0 if not found.
 5. "workers_comp_statutory": WORKERS COMPENSATION - are limits statutory (usually marked as WC EXEMPT or checkboxes Yes/No)? Set to true if STATUTORY is checked or indicated, else false.
 6. "policy_expiration_date": Look for the General Liability, Automobile, or main policy EXPIRATION DATE. Format as 'YYYY-MM-DD'.
+7. "gl_products_completed": PRODUCTS - COMP/OP AGG limit ($). Set to 0 if not found.
+8. "umbrella_limit": UMBRELLA/EXCESS EACH OCCURRENCE limit ($). Set to 0 if not found.
+9. "employers_liability_accident": Employers' Liability: E.L. EACH ACCIDENT limit ($). Set to 0 if not found.
+10. "employers_liability_disease_person": Employers' Liability: E.L. DISEASE - EA EMPLOYEE limit ($). Set to 0 if not found.
+11. "employers_liability_disease_limit": Employers' Liability: E.L. DISEASE - POLICY LIMIT ($). Set to 0 if not found.
+12. "professional_liability": Professional Liability (usually under other/additional lines) ($). Set to 0 if not found.
+13. "pollution_liability": Pollution Liability (usually under other/additional lines or endorsements) ($). Set to 0 if not found.
 
 Strictly return ONLY the requested JSON schema.`;
 
@@ -81,6 +88,13 @@ Strictly return ONLY the requested JSON schema.`;
                 auto_combined_single_limit: { type: Type.NUMBER },
                 workers_comp_statutory: { type: Type.BOOLEAN },
                 policy_expiration_date: { type: Type.STRING, description: "YYYY-MM-DD form" },
+                gl_products_completed: { type: Type.NUMBER },
+                umbrella_limit: { type: Type.NUMBER },
+                employers_liability_accident: { type: Type.NUMBER },
+                employers_liability_disease_person: { type: Type.NUMBER },
+                employers_liability_disease_limit: { type: Type.NUMBER },
+                professional_liability: { type: Type.NUMBER },
+                pollution_liability: { type: Type.NUMBER },
               },
               required: [
                 "insured_name",
@@ -89,6 +103,13 @@ Strictly return ONLY the requested JSON schema.`;
                 "auto_combined_single_limit",
                 "workers_comp_statutory",
                 "policy_expiration_date",
+                "gl_products_completed",
+                "umbrella_limit",
+                "employers_liability_accident",
+                "employers_liability_disease_person",
+                "employers_liability_disease_limit",
+                "professional_liability",
+                "pollution_liability",
               ],
             },
           },
@@ -113,6 +134,13 @@ Strictly return ONLY the requested JSON schema.`;
         let autoLimit = 1000000;
         let wcStat = true;
         let expireDate = "2026-09-15"; // Future date (Compliant)
+        let glProd = 2000000;
+        let umbrellaVal = 5000000; // meets $5M for Electrical
+        let elAcc = 1000000;
+        let elDisePer = 1000000;
+        let elDiseLim = 1000000;
+        let profLiabVal = 2000000; // meets $2M professional
+        let pollLiabVal = 0;
 
         const nameLower = (fileName || "").toLowerCase();
         if (nameLower.includes("apex") || nameLower.includes("plumbing")) {
@@ -122,6 +150,13 @@ Strictly return ONLY the requested JSON schema.`;
           autoLimit = 500000; // Insufficient Auto
           wcStat = false;
           expireDate = "2026-11-20";
+          glProd = 2000000;
+          umbrellaVal = 5000000;
+          elAcc = 1000000;
+          elDisePer = 1000000;
+          elDiseLim = 1000000;
+          profLiabVal = 2000000;
+          pollLiabVal = 2000000;
         } else if (nameLower.includes("titan") || nameLower.includes("steel") || nameLower.includes("frame")) {
           insuredName = "Titan Structural Steel Corp";
           glOcc = 5000000;
@@ -129,6 +164,13 @@ Strictly return ONLY the requested JSON schema.`;
           autoLimit = 2000000;
           wcStat = true;
           expireDate = "2026-05-10"; // Already expired (Relative to June 2026 current time)
+          glProd = 4000000;
+          umbrellaVal = 10000000; // meets $10M for crane/steel
+          elAcc = 2000000;
+          elDisePer = 2000000;
+          elDiseLim = 2000000;
+          profLiabVal = 0;
+          pollLiabVal = 0;
         } else if (nameLower.includes("vortex") || nameLower.includes("hvac") || nameLower.includes("mechanical")) {
           insuredName = "Vortex Mechanical Services";
           glOcc = 1500000;
@@ -136,6 +178,13 @@ Strictly return ONLY the requested JSON schema.`;
           autoLimit = 1000000;
           wcStat = true;
           expireDate = "2026-07-01"; // Expiring soon
+          glProd = 1500000;
+          umbrellaVal = 1000000; // short of trade required umbrella
+          elAcc = 1000000;
+          elDisePer = 1000000;
+          elDiseLim = 1000000;
+          profLiabVal = 2000000;
+          pollLiabVal = 2000000;
         } else if (nameLower.includes("solid") || nameLower.includes("concrete")) {
           insuredName = "Solid Ground Concrete Works";
           glOcc = 2000000;
@@ -143,6 +192,13 @@ Strictly return ONLY the requested JSON schema.`;
           autoLimit = 1000000;
           wcStat = true;
           expireDate = "2027-01-15";
+          glProd = 2000000;
+          umbrellaVal = 5000000;
+          elAcc = 1000000;
+          elDisePer = 1000000;
+          elDiseLim = 1000000;
+          profLiabVal = 0;
+          pollLiabVal = 2000000;
         }
 
         // Simulate network/processing latency
@@ -157,6 +213,13 @@ Strictly return ONLY the requested JSON schema.`;
             auto_combined_single_limit: autoLimit,
             workers_comp_statutory: wcStat,
             policy_expiration_date: expireDate,
+            gl_products_completed: glProd,
+            umbrella_limit: umbrellaVal,
+            employers_liability_accident: elAcc,
+            employers_liability_disease_person: elDisePer,
+            employers_liability_disease_limit: elDiseLim,
+            professional_liability: profLiabVal,
+            pollution_liability: pollLiabVal,
           },
           simulated: true,
           warning: gemError.message.includes("is not configured") 
