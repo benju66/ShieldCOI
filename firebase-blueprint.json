@@ -1,0 +1,101 @@
+{
+  "entities": {
+    "project": {
+      "title": "Project",
+      "description": "A construction/development project requiring COI tracking.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "number": { "type": "string" },
+        "target_completion_date": { "type": "string", "format": "date" },
+        "requirements": {
+          "type": "object",
+          "properties": {
+            "gl_occurrence": { "type": "number" },
+            "gl_aggregate": { "type": "number" },
+            "auto_limit": { "type": "number" },
+            "workers_comp": { "type": "boolean" },
+            "warn_days_out": { "type": "number" }
+          },
+          "required": ["gl_occurrence", "gl_aggregate", "auto_limit", "workers_comp", "warn_days_out"]
+        },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "number", "target_completion_date", "requirements", "createdAt"]
+    },
+    "subcontractor": {
+      "title": "Subcontractor",
+      "description": "A subcontractor hired for a specific project.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "project_id": { "type": "string" },
+        "company_name": { "type": "string" },
+        "trade": { "type": "string" },
+        "contract_value": { "type": "number" },
+        "compliance_status": { "type": "string", "enum": ["Compliant", "Insufficient Coverage", "Expired", "Pending Upload"] },
+        "manual_override": { "type": "boolean" },
+        "override_notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "project_id", "company_name", "trade", "contract_value", "compliance_status", "manual_override", "createdAt"]
+    },
+    "coi_record": {
+      "title": "CoiRecord",
+      "description": "An uploaded COI record for a subcontractor.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "subcontractor_id": { "type": "string" },
+        "project_id": { "type": "string" },
+        "uploaded_at": { "type": "string", "format": "date-time" },
+        "file_name": { "type": "string" },
+        "insured_extracted_name": { "type": "string" },
+        "gl_occurrence_extracted": { "type": "number" },
+        "gl_aggregate_extracted": { "type": "number" },
+        "auto_combined_single_limit_extracted": { "type": "number" },
+        "workers_comp_statutory_extracted": { "type": "boolean" },
+        "policy_expiration_date_extracted": { "type": "string", "format": "date" },
+        "validation_errors": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "required": ["id", "subcontractor_id", "project_id", "uploaded_at", "file_name", "validation_errors"]
+    },
+    "notification": {
+      "title": "Notification",
+      "description": "A compliance notification or alert.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "project_id": { "type": "string" },
+        "project_name": { "type": "string" },
+        "subcontractor_name": { "type": "string" },
+        "type": { "type": "string", "enum": ["danger", "warning", "info"] },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "project_id", "project_name", "subcontractor_name", "type", "message", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/projects/{projectId}": {
+      "schema": "project",
+      "description": "Construction projects collection"
+    },
+    "/projects/{projectId}/subcontractors/{subcontractorId}": {
+      "schema": "subcontractor",
+      "description": "Subcontractors assigned to a project"
+    },
+    "/projects/{projectId}/subcontractors/{subcontractorId}/cois/{coiId}": {
+      "schema": "coi_record",
+      "description": "COI files uploaded and scanned for a subcontractor"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "notification",
+      "description": "System-wide notification log"
+    }
+  }
+}

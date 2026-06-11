@@ -1,0 +1,6 @@
+{
+  "name": "ShieldCOI: Project-Level Insurance Compliance Manager",
+  "description": "Full-stack application to track active construction projects, configure insurance limits, scan ACORD 25 COIs via Gemini AI, and manage subcontractor compliance.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
