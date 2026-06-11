@@ -5,13 +5,14 @@ interface SubcontractorModalProps {
   isOpen: boolean;
   onClose: () => void;
   projectName: string;
-  onAdd: (companyName: string, trade: string, contractValue: number) => Promise<void>;
+  onAdd: (companyName: string, trade: string, contractValue: number, vendorType: "Subcontractor" | "Supplier") => Promise<void>;
 }
 
 export default function SubcontractorModal({ isOpen, onClose, projectName, onAdd }: SubcontractorModalProps) {
   const [companyName, setCompanyName] = useState("");
   const [trade, setTrade] = useState("Environmental");
   const [contractValue, setContractValue] = useState(150000);
+  const [vendorType, setVendorType] = useState<"Subcontractor" | "Supplier">("Subcontractor");
   const [submitting, setSubmitting] = useState(false);
 
   if (!isOpen) return null;
@@ -25,10 +26,11 @@ export default function SubcontractorModal({ isOpen, onClose, projectName, onAdd
 
     try {
       setSubmitting(true);
-      await onAdd(companyName, trade, Number(contractValue));
+      await onAdd(companyName, trade, Number(contractValue), vendorType);
       setCompanyName("");
-      setTrade("");
+      setTrade("Environmental");
       setContractValue(150000);
+      setVendorType("Subcontractor");
       onClose();
     } catch (err) {
       alert("Failed to enroll subcontractor.");
@@ -77,6 +79,23 @@ export default function SubcontractorModal({ isOpen, onClose, projectName, onAdd
               placeholder="e.g. Paramount Glazing Inc."
               className="w-full text-xs bg-slate-50 border border-slate-200 focus:bg-white focus:border-blue-500 focus:outline-none rounded p-2 text-slate-800"
             />
+          </div>
+
+          {/* Vendor Classification */}
+          <div>
+            <label htmlFor="subcontractor-vendor-type" className="block text-[11px] font-bold text-slate-700 mb-1">
+              Company Vendor Classification *
+            </label>
+            <select
+              id="subcontractor-vendor-type"
+              required
+              value={vendorType}
+              onChange={(e) => setVendorType(e.target.value as "Subcontractor" | "Supplier")}
+              className="w-full text-xs bg-slate-50 border border-slate-200 focus:bg-white focus:border-blue-500 focus:outline-none rounded p-2 text-slate-800 cursor-pointer"
+            >
+              <option value="Subcontractor">Subcontractor</option>
+              <option value="Supplier">Supplier</option>
+            </select>
           </div>
 
           {/* Trade Package */}

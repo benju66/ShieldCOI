@@ -57,6 +57,7 @@ export interface Subcontractor {
   manual_override: boolean;
   override_notes: string;
   createdAt: string;
+  vendor_type: "Subcontractor" | "Supplier";
   waiver_reason_type?: "Low Contract Value" | "Low-Risk Scope" | "Executive Discretion" | "Temporary Extension" | null;
   waiver_authorized_by?: string | null;
   waiver_expiration_date?: string | null;

@@ -25,8 +25,12 @@ import {
   Trash2,
   History,
   Download,
-  Printer
+  Printer,
+  X,
+  HelpCircle
 } from "lucide-react";
+
+import UserGuideModal from "./components/UserGuideModal";
 
 import {
   getProjects,
@@ -67,6 +71,10 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [pageLoading, setPageLoading] = useState(true);
   const [isSeeding, setIsSeeding] = useState(false);
+  const [showWelcomeIntro, setShowWelcomeIntro] = useState<boolean>(() => {
+    return localStorage.getItem("shieldcoi_show_welcome") !== "false";
+  });
+  const [isUserGuideOpen, setIsUserGuideOpen] = useState(false);
 
   // History state
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
@@ -203,12 +211,13 @@ export default function App() {
   };
 
   // Enrolling a subcontractor
-  const handleAddSubcontractor = async (companyName: string, trade: string, contractValue: number) => {
+  const handleAddSubcontractor = async (companyName: string, trade: string, contractValue: number, vendorType: "Subcontractor" | "Supplier") => {
     if (!selectedProject) return;
     await createSubcontractor(selectedProject.id, {
       company_name: companyName,
       trade,
       contract_value: contractValue,
+      vendor_type: vendorType,
     });
     await loadAllData();
   };
@@ -313,6 +322,16 @@ export default function App() {
 
         {/* Database controllers & Auth simulation */}
         <div className="flex items-center space-x-2">
+          {/* User Guide Button */}
+          <button
+            onClick={() => setIsUserGuideOpen(true)}
+            id="user-guide-toggle-button"
+            type="button"
+            className="flex items-center space-x-1.5 px-2.5 py-1 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 rounded-md text-[11px] font-semibold shadow-xs cursor-pointer transition-all"
+          >
+            <span>📖 User Guide & Instructions</span>
+          </button>
+
           <button
             onClick={() => runDurableSeeding(true)}
             id="seed-database-button"
@@ -533,7 +552,7 @@ export default function App() {
                 <div id="threshold-and-vendor-grid" className="grid grid-cols-1 md:grid-cols-12 gap-5">
                   
                   {/* Left segment - Thresholds parameters card */}
-                  <div id="active-thresholds-panel" className="col-span-1 md:col-span-4 bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2.5">
+                  <div id="active-thresholds-panel" className="col-span-1 md:col-span-3 bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2.5">
                     <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center">
                       <Sliders className="h-3 w-3 mr-1 text-slate-400" /> Required COI Minimums
                     </span>
@@ -564,13 +583,13 @@ export default function App() {
                         </strong>
                       </div>
                       <div className="flex items-center justify-between border-t border-slate-200 pt-1.5 text-[11px]">
-                        <span className="text-slate-500">Workers Comp</span>
+                        <span className="text-slate-505">Workers Comp</span>
                         <strong className="text-slate-800 font-semibold uppercase tracking-wide text-[10px]">
-                          {selectedProject.requirements.workers_comp ? "Statutory Limits" : "N/A"}
+                          {selectedProject.requirements.workers_comp ? "Statutory" : "N/A"}
                         </strong>
                       </div>
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-slate-505">Grace Notification</span>
+                        <span className="text-slate-505">Grace Buffer</span>
                         <strong className="text-slate-800 text-[10px]">
                           {selectedProject.requirements.warn_days_out} Days
                         </strong>
@@ -579,15 +598,15 @@ export default function App() {
                   </div>
 
                   {/* Right segment - Subcontractors assigned tabular view */}
-                  <div id="enrolled-vendor-table-container" className="col-span-1 md:col-span-8 overflow-x-auto border border-slate-200 rounded-lg bg-white">
-                    <table id="subcontractors-table" className="w-full text-left border-collapse">
+                  <div id="enrolled-vendor-table-container" className="col-span-1 md:col-span-9 overflow-x-auto border border-slate-200 rounded-lg bg-white">
+                    <table id="subcontractors-table" className="w-full text-left border-collapse table-auto">
                       <thead>
-                        <tr className="border-b border-slate-200 text-[10px] text-slate-500 font-semibold uppercase tracking-wider bg-slate-50">
-                          <th className="py-3 px-4">Company Name & Trade</th>
-                          <th className="py-3 px-4 text-right">Contract Value</th>
-                          <th className="py-3 px-4 text-center">Status</th>
-                          <th className="py-3 px-4 text-center">COI Expiration</th>
-                          <th className="py-3 px-4 text-center">Action</th>
+                        <tr className="border-b border-slate-200 text-[10px] text-slate-500 font-semibold uppercase tracking-wider bg-slate-50/75">
+                          <th className="py-2.5 px-3 md:px-4">Company Name & Trade</th>
+                          <th className="py-2.5 px-3 md:px-4 text-right">Contract Value</th>
+                          <th className="py-2.5 px-3 md:px-4 text-center">Status</th>
+                          <th className="py-2.5 px-3 md:px-4 text-center">COI Expiration</th>
+                          <th className="py-2.5 px-3 md:px-4 text-center">Action</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-xs text-slate-800">
@@ -616,11 +635,11 @@ export default function App() {
                             return (
                               <tr
                                 key={sub.id}
-                                className={`hover:bg-slate-50 transition-colors ${
+                                className={`hover:bg-slate-50/50 transition-colors ${
                                   isSelectedForUpload ? "bg-blue-50/50" : ""
                                 }`}
                               >
-                                <td className="py-3 px-4 animate-in fade-in duration-100">
+                                <td className="py-2.5 px-3 md:px-4 animate-in fade-in duration-100">
                                   <div className="flex flex-col">
                                     <div className="font-semibold text-slate-905 flex items-center flex-wrap gap-y-1">
                                       <button
@@ -634,6 +653,15 @@ export default function App() {
                                       >
                                         {sub.company_name}
                                       </button>
+                                      {sub.vendor_type === "Supplier" ? (
+                                        <span className="ml-1.5 px-1.5 py-0.5 rounded border font-medium select-none bg-slate-100 text-slate-700 border-slate-200 text-[10px] shrink-0">
+                                          Supplier
+                                        </span>
+                                      ) : (
+                                        <span className="ml-1.5 px-1.5 py-0.5 rounded border font-medium select-none bg-blue-50 text-blue-700 border-blue-100 text-[10px] shrink-0">
+                                          Subcontractor
+                                        </span>
+                                      )}
                                       {sub.manual_override && (
                                         <span
                                           title={sub.override_notes}
@@ -661,10 +689,10 @@ export default function App() {
                                     </div>
                                   </div>
                                 </td>
-                                <td className="py-3 px-4 text-right font-mono text-xs font-semibold text-slate-800 tracking-tight tabular-nums">
+                                <td className="py-2.5 px-3 md:px-4 text-right font-mono text-xs font-semibold text-slate-800 tracking-tight tabular-nums">
                                   {formatUSD(sub.contract_value)}
                                 </td>
-                                <td className="py-3 px-4 text-center relative">
+                                <td className="py-2.5 px-3 md:px-4 text-center relative">
                                   <div className="inline-block relative group">
                                     <span className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wider cursor-help transition-all ${badgeStyle}`}>
                                       {sub.compliance_status}
@@ -701,7 +729,7 @@ export default function App() {
                                     )}
                                   </div>
                                 </td>
-                                <td className="py-3 px-4 text-center">
+                                <td className="py-2.5 px-3 md:px-4 text-center">
                                   {(() => {
                                     const activeCoi = activeCoiMap[sub.id];
                                     const coiExpDate = activeCoi 
@@ -740,7 +768,7 @@ export default function App() {
                                     );
                                   })()}
                                 </td>
-                                <td className="py-3 px-4 text-center animate-in fade-in duration-100">
+                                <td className="py-2.5 px-3 md:px-4 text-center animate-in fade-in duration-100">
                                   <div className="flex items-center justify-center space-x-1.5">
                                     <button
                                       onClick={() => {
@@ -814,33 +842,50 @@ export default function App() {
               </div>
             ) : (
               // Default view showing notifications and global uploader overview
-              <div id="dashboard-general-view" className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
+              <div 
+                id="dashboard-general-view" 
+                className={`grid grid-cols-1 ${showWelcomeIntro ? "md:grid-cols-2" : "md:grid-cols-1"} gap-5 items-start`}
+              >
                 
                 {/* Visual Intro widget */}
-                <div id="introduction-welcome-card" className="bg-white border border-slate-200 p-5 rounded-lg shadow-xs flex flex-col justify-between h-full min-h-[380px]">
-                  <div className="space-y-3.5">
-                    <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider inline-block">
-                      Enterprise Compliance
-                    </span>
-                    <h2 id="welcome-title" className="text-base font-bold text-slate-900 tracking-tight font-display">
-                      Zero-Trust Construction Compliance Audits
-                    </h2>
-                    <p className="text-xs text-slate-550 leading-relaxed">
-                      ShieldCOI mitigates downstream construction litigation by continuously auditing subcontractor Certificates of Insurance (ACORD 25 templates). 
-                    </p>
-                    <p className="text-xs text-slate-600 leading-relaxed font-semibold bg-blue-50/50 p-3 rounded-lg border border-blue-100">
-                      Select any active project from the list directory to run verification audits, configure policy aggregate minimums, or manually override limits via justified exceptions.
-                    </p>
-                  </div>
-
-                  <div className="mt-8 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400 font-medium">
-                    <div className="flex items-center space-x-1.5">
-                      <Info className="h-4 w-4 text-blue-500" />
-                      <span>Gemini Multimodal AI Extraction</span>
+                {showWelcomeIntro && (
+                  <div id="introduction-welcome-card" className="bg-white border border-slate-200 p-5 rounded-lg shadow-xs flex flex-col justify-between h-full min-h-[380px] relative">
+                    <button
+                      id="dismiss-welcome-btn"
+                      onClick={() => {
+                        setShowWelcomeIntro(false);
+                        localStorage.setItem("shieldcoi_show_welcome", "false");
+                      }}
+                      className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-all cursor-pointer"
+                      title="Permanently dismiss welcome guide"
+                      aria-label="Dismiss Welcome Guide"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                    <div className="space-y-3.5">
+                      <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider inline-block">
+                        Enterprise Compliance
+                      </span>
+                      <h2 id="welcome-title" className="text-base font-bold text-slate-900 tracking-tight font-display pr-6">
+                        Zero-Trust Construction Compliance Audits
+                      </h2>
+                      <p className="text-xs text-slate-550 leading-relaxed font-sans">
+                        ShieldCOI mitigates downstream construction litigation by continuously auditing subcontractor Certificates of Insurance (ACORD 25 templates). 
+                      </p>
+                      <p className="text-xs text-slate-600 leading-relaxed font-semibold bg-blue-50/50 p-3 rounded-lg border border-blue-100">
+                        Select any active project from the list directory to run verification audits, configure policy aggregate minimums, or manually override limits via justified exceptions.
+                      </p>
                     </div>
-                    <span className="font-semibold text-slate-400">ShieldCOI v1.0</span>
+
+                    <div className="mt-8 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400 font-medium">
+                      <div className="flex items-center space-x-1.5">
+                        <Info className="h-4 w-4 text-blue-500" />
+                        <span>Gemini Multimodal AI Extraction</span>
+                      </div>
+                      <span className="font-semibold text-slate-400">ShieldCOI v1.0</span>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* Notifications Log */}
                 <NotificationList
@@ -860,6 +905,11 @@ export default function App() {
       </main>
 
       {/* 3. Global Modal Components */}
+      <UserGuideModal
+        isOpen={isUserGuideOpen}
+        onClose={() => setIsUserGuideOpen(false)}
+      />
+
       <ProjectForm
         isOpen={isProjModalOpen}
         onClose={() => {

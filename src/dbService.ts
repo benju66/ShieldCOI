@@ -83,7 +83,7 @@ export async function getSubcontractors(projectId: string): Promise<Subcontracto
  */
 export async function createSubcontractor(
   projectId: string,
-  sub: Omit<Subcontractor, "id" | "project_id" | "compliance_status" | "manual_override" | "override_notes" | "createdAt">
+  sub: Omit<Subcontractor, "id" | "project_id" | "compliance_status" | "manual_override" | "override_notes" | "createdAt" | "vendor_type"> & { vendor_type?: "Subcontractor" | "Supplier" }
 ): Promise<Subcontractor> {
   const id = "sub_" + Math.random().toString(36).substring(2, 9);
   const now = new Date().toISOString();
@@ -95,6 +95,7 @@ export async function createSubcontractor(
     manual_override: false,
     override_notes: "",
     createdAt: now,
+    vendor_type: sub.vendor_type || "Subcontractor",
   };
 
   const path = `${PROJECTS_COL}/${projectId}/subcontractors/${id}`;

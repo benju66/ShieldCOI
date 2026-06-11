@@ -74,11 +74,12 @@
         "manual_override": { "type": "boolean" },
         "override_notes": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
+        "vendor_type": { "type": "string", "enum": ["Subcontractor", "Supplier"] },
         "waiver_reason_type": { "type": ["string", "null"], "enum": ["Low Contract Value", "Low-Risk Scope", "Executive Discretion", "Temporary Extension", null] },
         "waiver_authorized_by": { "type": ["string", "null"] },
         "waiver_expiration_date": { "type": ["string", "null"], "format": "date" }
       },
-      "required": ["id", "project_id", "company_name", "trade", "contract_value", "compliance_status", "manual_override", "createdAt"]
+      "required": ["id", "project_id", "company_name", "trade", "contract_value", "compliance_status", "manual_override", "createdAt", "vendor_type"]
     },
     "coi_record": {
       "title": "CoiRecord",
