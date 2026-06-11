@@ -87,6 +87,15 @@ export default function ExecutivePrintReport({
             </strong>
           </div>
 
+          <div className="border-l-2 border-slate-702 pl-3">
+            <span className="text-slate-505 block uppercase text-[10px] font-semibold tracking-wider">
+              GL Products / Completed Ops
+            </span>
+            <strong className="text-base font-mono font-bold text-slate-900 tracking-tight tabular-nums">
+              {formatUSD(project.requirements.gl_products_completed ?? 0)}
+            </strong>
+          </div>
+
           <div className="border-l-2 border-slate-705 pl-3">
             <span className="text-slate-505 block uppercase text-[10px] font-semibold tracking-wider">
               Auto Combined Single Limit
@@ -98,7 +107,7 @@ export default function ExecutivePrintReport({
 
           <div className="border-l-2 border-slate-705 pl-3">
             <span className="text-slate-505 block uppercase text-[10px] font-semibold tracking-wider">
-              Umbrella Requirement
+              Umbrella / Excess Limit
             </span>
             <strong className="text-base font-mono font-bold text-slate-900 tracking-tight tabular-nums">
               {project.requirements.umbrella_limit
@@ -116,6 +125,33 @@ export default function ExecutivePrintReport({
             </strong>
           </div>
 
+          <div className="border-l-2 border-slate-702 pl-3">
+            <span className="text-slate-505 block uppercase text-[10px] font-semibold tracking-wider">
+              E.L. Each Accident
+            </span>
+            <strong className="text-base font-mono font-bold text-slate-900 tracking-tight tabular-nums">
+              {formatUSD(project.requirements.employers_liability_accident ?? 0)}
+            </strong>
+          </div>
+
+          <div className="border-l-2 border-slate-702 pl-3">
+            <span className="text-slate-505 block uppercase text-[10px] font-semibold tracking-wider">
+              E.L. Disease - Each Employee
+            </span>
+            <strong className="text-base font-mono font-bold text-slate-900 tracking-tight tabular-nums">
+              {formatUSD(project.requirements.employers_liability_disease_person ?? 0)}
+            </strong>
+          </div>
+
+          <div className="border-l-2 border-slate-702 pl-3">
+            <span className="text-slate-505 block uppercase text-[10px] font-semibold tracking-wider">
+              E.L. Disease - Policy Limit
+            </span>
+            <strong className="text-base font-mono font-bold text-slate-900 tracking-tight tabular-nums">
+              {formatUSD(project.requirements.employers_liability_disease_limit ?? 0)}
+            </strong>
+          </div>
+
           <div className="border-l-2 border-slate-705 pl-3">
             <span className="text-slate-550 block uppercase text-[10px] font-semibold tracking-wider">
               Grace Warn Threshold
@@ -124,6 +160,18 @@ export default function ExecutivePrintReport({
               {project.requirements.warn_days_out} Days Prior
             </strong>
           </div>
+
+          {/* Dynamic Custom Requirements */}
+          {project.custom_requirements && project.custom_requirements.map((custom) => (
+            <div key={custom.id} className="border-l-2 border-blue-600 pl-3">
+              <span className="text-blue-600 block uppercase text-[10px] font-semibold tracking-wider">
+                {custom.label} (Custom)
+              </span>
+              <strong className="text-base font-mono font-bold text-blue-955 tracking-tight tabular-nums">
+                {formatUSD(custom.limit)}
+              </strong>
+            </div>
+          ))}
         </div>
       </div>
 

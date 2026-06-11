@@ -354,7 +354,7 @@ export default function App() {
       </header>
 
       {/* 2. Main Dashboard Layout Area */}
-      <main id="app-viewport-pane" className="flex-1 w-full max-w-7xl mx-auto p-4 flex flex-col h-full lg:overflow-hidden">
+      <main id="app-viewport-pane" className="flex-1 w-full max-w-[1600px] mx-auto px-6 py-4 flex flex-col h-full lg:overflow-hidden">
         
         {/* Dynamic high level stats header */}
         <DashboardStats projects={projects} subcontractors={allSubcontractors} />
@@ -552,48 +552,133 @@ export default function App() {
                 <div id="threshold-and-vendor-grid" className="grid grid-cols-1 md:grid-cols-12 gap-5">
                   
                   {/* Left segment - Thresholds parameters card */}
-                  <div id="active-thresholds-panel" className="col-span-1 md:col-span-3 bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2.5">
-                    <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center">
-                      <Sliders className="h-3 w-3 mr-1 text-slate-400" /> Required COI Minimums
-                    </span>
+                  <div id="active-thresholds-panel" className="col-span-1 md:col-span-3 bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-3.5 max-h-[80vh] overflow-y-auto">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
+                      <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center">
+                        <Sliders className="h-3 w-3 mr-1 text-slate-400" /> Required COI Minimums
+                      </span>
+                    </div>
 
-                    <div className="space-y-2 pt-0.5 text-[11px]">
-                      <div>
-                        <span className="text-[9px] text-slate-500 block uppercase font-semibold">
-                          General Liability Occurrence Limit
-                        </span>
-                        <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
-                          {formatUSD(selectedProject.requirements.gl_occurrence)}
-                        </strong>
+                    <div className="space-y-2.5 text-[11px]">
+                      {/* General Liability */}
+                      <div className="space-y-1.5">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">General Liability</span>
+                        <div className="pl-1.5 border-l border-slate-200 space-y-1.5">
+                          <div>
+                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
+                              Each Occurrence Limit
+                            </span>
+                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
+                              {formatUSD(selectedProject.requirements.gl_occurrence)}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
+                              General Aggregate Limit
+                            </span>
+                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
+                              {formatUSD(selectedProject.requirements.gl_aggregate)}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
+                              Products / Completed Ops
+                            </span>
+                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
+                              {formatUSD(selectedProject.requirements.gl_products_completed ?? 0)}
+                            </strong>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <span className="text-[9px] text-slate-500 block uppercase font-semibold">
-                          General Liability General Aggregate
-                        </span>
-                        <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
-                          {formatUSD(selectedProject.requirements.gl_aggregate)}
-                        </strong>
+
+                      {/* Auto & Umbrella */}
+                      <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Auto & Excess</span>
+                        <div className="pl-1.5 border-l border-slate-200 space-y-1.5">
+                          <div>
+                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
+                              Automobile Combined Single
+                            </span>
+                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
+                              {formatUSD(selectedProject.requirements.auto_limit)}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
+                              Umbrella / Excess Limit
+                            </span>
+                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
+                              {formatUSD(selectedProject.requirements.umbrella_limit ?? 0)}
+                            </strong>
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <span className="text-[9px] text-slate-500 block uppercase font-semibold">
-                          Automobile Liability Combined Single
-                        </span>
-                        <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
-                          {formatUSD(selectedProject.requirements.auto_limit)}
-                        </strong>
+
+                      {/* Employers Liability */}
+                      <div className="space-y-1.5 pt-1 border-t border-slate-100">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Employers Liability</span>
+                        <div className="pl-1.5 border-l border-slate-200 space-y-1.5">
+                          <div>
+                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
+                              E.L. Each Accident
+                            </span>
+                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
+                              {formatUSD(selectedProject.requirements.employers_liability_accident ?? 0)}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
+                              E.L. Disease - Each Employee
+                            </span>
+                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
+                              {formatUSD(selectedProject.requirements.employers_liability_disease_person ?? 0)}
+                            </strong>
+                          </div>
+                          <div>
+                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
+                              E.L. Disease - Policy Limit
+                            </span>
+                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
+                              {formatUSD(selectedProject.requirements.employers_liability_disease_limit ?? 0)}
+                            </strong>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between border-t border-slate-200 pt-1.5 text-[11px]">
-                        <span className="text-slate-505">Workers Comp</span>
-                        <strong className="text-slate-800 font-semibold uppercase tracking-wide text-[10px]">
-                          {selectedProject.requirements.workers_comp ? "Statutory" : "N/A"}
-                        </strong>
+
+                      {/* Workers Comp & Buffer */}
+                      <div className="space-y-1.5 pt-1.5 border-t border-slate-100 text-[11px]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Workers Comp:</span>
+                          <strong className="text-slate-800 font-semibold uppercase tracking-wide text-[10px]">
+                            {selectedProject.requirements.workers_comp ? "Statutory" : "Excluded"}
+                          </strong>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-500">Grace Buffer:</span>
+                          <strong className="text-slate-800 text-[10px]">
+                            {selectedProject.requirements.warn_days_out} Days
+                          </strong>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-slate-505">Grace Buffer</span>
-                        <strong className="text-slate-800 text-[10px]">
-                          {selectedProject.requirements.warn_days_out} Days
-                        </strong>
-                      </div>
+
+                      {/* Custom Requirements */}
+                      {selectedProject.custom_requirements && selectedProject.custom_requirements.length > 0 && (
+                        <div className="space-y-1.5 pt-2 border-t border-slate-200">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Custom Coverage</span>
+                          <div className="pl-1.5 border-l border-blue-200 space-y-1.5">
+                            {selectedProject.custom_requirements.map((custom) => (
+                              <div key={custom.id}>
+                                <span className="text-[9px] text-slate-500 block uppercase font-semibold">
+                                  {custom.label}
+                                </span>
+                                <strong className="text-blue-800 font-mono text-xs tracking-tight tabular-nums">
+                                  {formatUSD(custom.limit)}
+                                </strong>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
 
