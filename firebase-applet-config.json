@@ -1,10 +1,10 @@
 {
-  "projectId": "project-4f475803-35e0-422d-93e",
-  "appId": "1:552114237876:web:657b616b2f23588b3882e1",
-  "apiKey": "AIzaSyD7qRDe8WIGxav9rw9Cqzja1Q5KMshP0Fk",
-  "authDomain": "project-4f475803-35e0-422d-93e.firebaseapp.com",
+  "projectId": "shieldcoi-staging",
+  "appId": "1:1070109602683:web:ed85b34b8073d2ecff83de",
+  "apiKey": "AIzaSyBhJxG_6YWDF1wGYobPj4jpo_sZidD8ePI",
+  "authDomain": "shieldcoi-staging.firebaseapp.com",
   "firestoreDatabaseId": "ai-studio-582160b0-2b2f-4b35-bd7d-5bf8d4344ee4",
-  "storageBucket": "project-4f475803-35e0-422d-93e.firebasestorage.app",
-  "messagingSenderId": "552114237876",
+  "storageBucket": "shieldcoi-staging.firebasestorage.app",
+  "messagingSenderId": "1070109602683",
   "measurementId": ""
 }
