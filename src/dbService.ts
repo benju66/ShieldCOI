@@ -1,81 +1,111 @@
-import {
-  collection,
-  doc,
-  getDocs,
-  getDoc,
-  setDoc,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  orderBy,
-} from "firebase/firestore";
-import { db, handleFirestoreError, OperationType } from "./firebase";
 import { Project, Subcontractor, CoiRecord, Notification } from "./types";
 import { verifyCompliance } from "./complianceEngine";
 
-// Collection Paths
-const PROJECTS_COL = "projects";
-const NOTIFICATIONS_COL = "notifications";
-
 /**
- * Fetch all projects
+ * Local-only data layer. All ShieldCOI records are persisted to the browser's
+ * localStorage, so the app runs with no backend or login. Each visitor keeps
+ * their own copy of the data. This mirrors the previous Firestore service's
+ * public API exactly, so the rest of the app is unchanged.
+ *
+ * When migrating to Supabase later, only this file needs to be swapped out.
  */
-export async function getProjects(): Promise<Project[]> {
+
+// Storage keys
+const KEY_PROJECTS = "shieldcoi_projects";
+const KEY_SUBS = "shieldcoi_subcontractors";
+const KEY_COIS = "shieldcoi_cois";
+const KEY_NOTIFS = "shieldcoi_notifications";
+
+// --- Persistence helpers ---
+function read<T>(key: string): T[] {
   try {
-    const q = query(collection(db, PROJECTS_COL), orderBy("createdAt", "desc"));
-    const snap = await getDocs(q);
-    return snap.docs.map((doc) => doc.data() as Project);
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T[]) : [];
   } catch (err) {
-    handleFirestoreError(err, OperationType.GET, PROJECTS_COL);
+    console.error(`Failed to read "${key}" from localStorage:`, err);
     return [];
   }
+}
+
+function write<T>(key: string, value: T[]): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (err) {
+    console.error(`Failed to write "${key}" to localStorage:`, err);
+  }
+}
+
+function genId(prefix: string): string {
+  return `${prefix}_` + Math.random().toString(36).substring(2, 9);
+}
+
+// =====================================================================
+// Projects
+// =====================================================================
+
+/**
+ * Fetch all projects (newest first)
+ */
+export async function getProjects(): Promise<Project[]> {
+  const projects = read<Project>(KEY_PROJECTS);
+  return projects.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 }
 
 /**
  * Fetch a single project
  */
 export async function getProject(projectId: string): Promise<Project | null> {
-  try {
-    const dClient = doc(db, PROJECTS_COL, projectId);
-    const snap = await getDoc(dClient);
-    return snap.exists() ? (snap.data() as Project) : null;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.GET, `${PROJECTS_COL}/${projectId}`);
-    return null;
-  }
+  const projects = read<Project>(KEY_PROJECTS);
+  return projects.find((p) => p.id === projectId) || null;
 }
 
 /**
  * Create a new project
  */
 export async function createProject(project: Omit<Project, "id" | "createdAt">): Promise<Project> {
-  const id = "proj_" + Math.random().toString(36).substring(2, 9);
+  const id = genId("proj");
   const now = new Date().toISOString();
   const newProject: Project = { ...project, id, createdAt: now };
 
-  try {
-    await setDoc(doc(db, PROJECTS_COL, id), newProject);
-    return newProject;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `${PROJECTS_COL}/${id}`);
-    throw err;
-  }
+  const projects = read<Project>(KEY_PROJECTS);
+  projects.push(newProject);
+  write(KEY_PROJECTS, projects);
+  return newProject;
 }
 
 /**
- * Fetch all subcontractors for a project
+ * Update top-level project specifications
+ */
+export async function updateProject(projectId: string, updates: Partial<Project>): Promise<void> {
+  const projects = read<Project>(KEY_PROJECTS);
+  const idx = projects.findIndex((p) => p.id === projectId);
+  if (idx === -1) {
+    throw new Error(`Project matching ID ${projectId} was not found.`);
+  }
+  projects[idx] = { ...projects[idx], ...updates };
+  write(KEY_PROJECTS, projects);
+}
+
+/**
+ * Cascading project deletion (removes nested subcontractors and COIs)
+ */
+export async function deleteProject(projectId: string): Promise<void> {
+  write(KEY_PROJECTS, read<Project>(KEY_PROJECTS).filter((p) => p.id !== projectId));
+  write(KEY_SUBS, read<Subcontractor>(KEY_SUBS).filter((s) => s.project_id !== projectId));
+  write(KEY_COIS, read<CoiRecord>(KEY_COIS).filter((c) => c.project_id !== projectId));
+}
+
+// =====================================================================
+// Subcontractors
+// =====================================================================
+
+/**
+ * Fetch all subcontractors for a project (oldest first)
  */
 export async function getSubcontractors(projectId: string): Promise<Subcontractor[]> {
-  const path = `${PROJECTS_COL}/${projectId}/subcontractors`;
-  try {
-    const q = query(collection(db, db.app.options.projectId ? path : ""), orderBy("createdAt", "asc"));
-    const snap = await getDocs(collection(db, PROJECTS_COL, projectId, "subcontractors"));
-    return snap.docs.map((doc) => doc.data() as Subcontractor);
-  } catch (err) {
-    handleFirestoreError(err, OperationType.GET, path);
-    return [];
-  }
+  return read<Subcontractor>(KEY_SUBS)
+    .filter((s) => s.project_id === projectId)
+    .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
 }
 
 /**
@@ -85,7 +115,7 @@ export async function createSubcontractor(
   projectId: string,
   sub: Omit<Subcontractor, "id" | "project_id" | "compliance_status" | "manual_override" | "override_notes" | "createdAt" | "vendor_type"> & { vendor_type?: "Subcontractor" | "Supplier" }
 ): Promise<Subcontractor> {
-  const id = "sub_" + Math.random().toString(36).substring(2, 9);
+  const id = genId("sub");
   const now = new Date().toISOString();
   const newSub: Subcontractor = {
     ...sub,
@@ -98,14 +128,10 @@ export async function createSubcontractor(
     vendor_type: sub.vendor_type || "Subcontractor",
   };
 
-  const path = `${PROJECTS_COL}/${projectId}/subcontractors/${id}`;
-  try {
-    await setDoc(doc(db, PROJECTS_COL, projectId, "subcontractors", id), newSub);
-    return newSub;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
-    throw err;
-  }
+  const subs = read<Subcontractor>(KEY_SUBS);
+  subs.push(newSub);
+  write(KEY_SUBS, subs);
+  return newSub;
 }
 
 /**
@@ -116,132 +142,57 @@ export async function updateSubcontractor(
   subId: string,
   updates: Partial<Subcontractor>
 ): Promise<void> {
-  const path = `${PROJECTS_COL}/${projectId}/subcontractors/${subId}`;
-  try {
-    const dClient = doc(db, PROJECTS_COL, projectId, "subcontractors", subId);
-    const snap = await getDoc(dClient);
-    let finalUpdates = { ...updates };
-    
-    if (snap.exists()) {
-      const currentSub = snap.data() as Subcontractor;
-      const isOverrideActive = finalUpdates.manual_override !== undefined 
-        ? finalUpdates.manual_override 
-        : currentSub.manual_override;
-      
-      if (isOverrideActive) {
-        finalUpdates.compliance_status = "Approved Exception";
-      }
-    } else {
-      if (finalUpdates.manual_override) {
-        finalUpdates.compliance_status = "Approved Exception";
-      }
-    }
-    await updateDoc(dClient, finalUpdates);
+  const subs = read<Subcontractor>(KEY_SUBS);
+  const idx = subs.findIndex((s) => s.id === subId && s.project_id === projectId);
 
-    if (finalUpdates.compliance_status === "Compliant") {
-      const companyName = (snap.exists() ? (snap.data() as Subcontractor).company_name : "") || "Subcontractor";
-      const notifsCol = collection(db, NOTIFICATIONS_COL);
-      const snapNotifs = await getDocs(notifsCol);
-      for (const d of snapNotifs.docs) {
-        const nData = d.data() as Notification;
-        if (
-          (nData.resolved === false || nData.resolved === undefined) &&
-          (nData.project_id === projectId || nData.subcontractor_name === companyName)
-        ) {
-          await updateDoc(doc(db, NOTIFICATIONS_COL, d.id), { resolved: true });
-        }
-      }
-    }
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
+  let finalUpdates = { ...updates };
+  const currentSub = idx !== -1 ? subs[idx] : null;
+
+  const isOverrideActive =
+    finalUpdates.manual_override !== undefined
+      ? finalUpdates.manual_override
+      : currentSub?.manual_override;
+
+  if (isOverrideActive) {
+    finalUpdates.compliance_status = "Approved Exception";
   }
-}
 
-/**
- * Update top-level project specifications
- */
-export async function updateProject(
-  projectId: string,
-  updates: Partial<Project>
-): Promise<void> {
-  const path = `${PROJECTS_COL}/${projectId}`;
-  try {
-    const dClient = doc(db, PROJECTS_COL, projectId);
-    await updateDoc(dClient, updates);
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, path);
-    throw err;
+  if (idx !== -1) {
+    subs[idx] = { ...subs[idx], ...finalUpdates };
+    write(KEY_SUBS, subs);
+  }
+
+  if (finalUpdates.compliance_status === "Compliant") {
+    const companyName = currentSub?.company_name || "Subcontractor";
+    resolveNotificationsFor(projectId, companyName);
   }
 }
 
 /**
  * Safely remove a subcontractor and all nested COIs
  */
-export async function deleteSubcontractor(
-  projectId: string,
-  subId: string
-): Promise<void> {
-  const path = `${PROJECTS_COL}/${projectId}/subcontractors/${subId}`;
-  try {
-    // 1. Fetch all child COI documents inside subcontractor's subcollection
-    const coisColRef = collection(db, PROJECTS_COL, projectId, "subcontractors", subId, "cois");
-    const coisSnap = await getDocs(coisColRef);
-    
-    // 2. Delete each nested COI document
-    for (const d of coisSnap.docs) {
-      await deleteDoc(doc(db, PROJECTS_COL, projectId, "subcontractors", subId, "cois", d.id));
-    }
-
-    // 3. Delete the subcontractor document
-    await deleteDoc(doc(db, PROJECTS_COL, projectId, "subcontractors", subId));
-  } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, path);
-    throw err;
-  }
+export async function deleteSubcontractor(projectId: string, subId: string): Promise<void> {
+  write(
+    KEY_COIS,
+    read<CoiRecord>(KEY_COIS).filter((c) => !(c.project_id === projectId && c.subcontractor_id === subId))
+  );
+  write(
+    KEY_SUBS,
+    read<Subcontractor>(KEY_SUBS).filter((s) => !(s.id === subId && s.project_id === projectId))
+  );
 }
 
-/**
- * cascading project deletion
- */
-export async function deleteProject(projectId: string): Promise<void> {
-  const path = `${PROJECTS_COL}/${projectId}`;
-  try {
-    // 1. Fetch all subcontractors belonging to the project
-    const subsColRef = collection(db, PROJECTS_COL, projectId, "subcontractors");
-    const subsSnap = await getDocs(subsColRef);
-
-    // 2. Clear all nested entities under subcontractors
-    for (const subDoc of subsSnap.docs) {
-      const subId = subDoc.id;
-      const coisColRef = collection(db, PROJECTS_COL, projectId, "subcontractors", subId, "cois");
-      const coisSnap = await getDocs(coisColRef);
-      for (const coiDoc of coisSnap.docs) {
-        await deleteDoc(doc(db, PROJECTS_COL, projectId, "subcontractors", subId, "cois", coiDoc.id));
-      }
-      await deleteDoc(doc(db, PROJECTS_COL, projectId, "subcontractors", subId));
-    }
-
-    // 3. Delete parent project document
-    await deleteDoc(doc(db, PROJECTS_COL, projectId));
-  } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, path);
-    throw err;
-  }
-}
+// =====================================================================
+// COI Records
+// =====================================================================
 
 /**
- * Get all COIs for a subcontractor
+ * Get all COIs for a subcontractor (newest first)
  */
 export async function getCoiRecords(projectId: string, subcontractorId: string): Promise<CoiRecord[]> {
-  const path = `${PROJECTS_COL}/${projectId}/subcontractors/${subcontractorId}/cois`;
-  try {
-    const q = query(collection(db, PROJECTS_COL, projectId, "subcontractors", subcontractorId, "cois"), orderBy("uploaded_at", "desc"));
-    const snap = await getDocs(q);
-    return snap.docs.map((doc) => doc.data() as CoiRecord);
-  } catch (err) {
-    handleFirestoreError(err, OperationType.GET, path);
-    return [];
-  }
+  return read<CoiRecord>(KEY_COIS)
+    .filter((c) => c.project_id === projectId && c.subcontractor_id === subcontractorId)
+    .sort((a, b) => (b.uploaded_at || "").localeCompare(a.uploaded_at || ""));
 }
 
 /**
@@ -252,7 +203,7 @@ export async function submitCoiRecord(
   subcontractorId: string,
   coiData: Omit<CoiRecord, "id" | "project_id" | "subcontractor_id" | "uploaded_at" | "validation_errors">
 ): Promise<CoiRecord> {
-  const id = "coi_" + Math.random().toString(36).substring(2, 9);
+  const id = genId("coi");
   const now = new Date().toISOString();
 
   // 1. Fetch parent project and subcontractor
@@ -261,30 +212,34 @@ export async function submitCoiRecord(
     throw new Error(`Project matching ID ${projectId} was not found.`);
   }
 
-  const subRef = doc(db, PROJECTS_COL, projectId, "subcontractors", subcontractorId);
-  const subSnap = await getDoc(subRef);
-  if (!subSnap.exists()) {
+  const subs = read<Subcontractor>(KEY_SUBS);
+  const subIdx = subs.findIndex((s) => s.id === subcontractorId && s.project_id === projectId);
+  if (subIdx === -1) {
     throw new Error(`Subcontractor matching ID ${subcontractorId} was not found.`);
   }
-  const subcontractor = subSnap.data() as Subcontractor;
+  const subcontractor = subs[subIdx];
   const trade = subcontractor.trade || "Other Trades";
 
   // 2. Perform compliance checks
-  const evaluation = verifyCompliance(project, {
-    insured_name: coiData.insured_extracted_name,
-    gl_each_occurrence: coiData.gl_occurrence_extracted,
-    gl_general_aggregate: coiData.gl_aggregate_extracted,
-    auto_combined_single_limit: coiData.auto_combined_single_limit_extracted,
-    workers_comp_statutory: coiData.workers_comp_statutory_extracted,
-    policy_expiration_date: coiData.policy_expiration_date_extracted,
-    gl_products_completed: coiData.gl_products_completed_extracted,
-    umbrella_limit: coiData.umbrella_limit_extracted,
-    employers_liability_accident: coiData.employers_liability_accident_extracted,
-    employers_liability_disease_person: coiData.employers_liability_disease_person_extracted,
-    employers_liability_disease_limit: coiData.employers_liability_disease_limit_extracted,
-    professional_liability: coiData.professional_liability_extracted,
-    pollution_liability: coiData.pollution_liability_extracted,
-  }, trade);
+  const evaluation = verifyCompliance(
+    project,
+    {
+      insured_name: coiData.insured_extracted_name,
+      gl_each_occurrence: coiData.gl_occurrence_extracted,
+      gl_general_aggregate: coiData.gl_aggregate_extracted,
+      auto_combined_single_limit: coiData.auto_combined_single_limit_extracted,
+      workers_comp_statutory: coiData.workers_comp_statutory_extracted,
+      policy_expiration_date: coiData.policy_expiration_date_extracted,
+      gl_products_completed: coiData.gl_products_completed_extracted,
+      umbrella_limit: coiData.umbrella_limit_extracted,
+      employers_liability_accident: coiData.employers_liability_accident_extracted,
+      employers_liability_disease_person: coiData.employers_liability_disease_person_extracted,
+      employers_liability_disease_limit: coiData.employers_liability_disease_limit_extracted,
+      professional_liability: coiData.professional_liability_extracted,
+      pollution_liability: coiData.pollution_liability_extracted,
+    },
+    trade
+  );
 
   const newCoi: CoiRecord = {
     ...coiData,
@@ -295,154 +250,161 @@ export async function submitCoiRecord(
     validation_errors: evaluation.errors,
   };
 
-  // 3. Write critical paths
-  const coiPath = `${PROJECTS_COL}/${projectId}/subcontractors/${subcontractorId}/cois/${id}`;
-  try {
-    // Write Coi Record
-    await setDoc(doc(db, PROJECTS_COL, projectId, "subcontractors", subcontractorId, "cois", id), newCoi);
+  // 3. Write the COI record
+  const cois = read<CoiRecord>(KEY_COIS);
+  cois.push(newCoi);
+  write(KEY_COIS, cois);
 
-    // Update Subcontractor status (only if not manually overridden)
-    const subRef = doc(db, PROJECTS_COL, projectId, "subcontractors", subcontractorId);
-    const subSnap = await getDoc(subRef);
-    if (subSnap.exists()) {
-      const sub = subSnap.data() as Subcontractor;
-      let targetStatus: Subcontractor["compliance_status"] = evaluation.status;
-      let manualOverride = sub.manual_override;
-      let overrideNotes = sub.override_notes || "";
-      let waiverReasonType = sub.waiver_reason_type || null;
-      let waiverAuthorizedBy = sub.waiver_authorized_by || null;
-      let waiverExpirationDate = sub.waiver_expiration_date || null;
+  // 4. Update subcontractor status (honoring active manual overrides / waivers)
+  let targetStatus: Subcontractor["compliance_status"] = evaluation.status;
+  let manualOverride = subcontractor.manual_override;
+  let overrideNotes = subcontractor.override_notes || "";
+  let waiverReasonType = subcontractor.waiver_reason_type || null;
+  let waiverAuthorizedBy = subcontractor.waiver_authorized_by || null;
+  let waiverExpirationDate = subcontractor.waiver_expiration_date || null;
 
-      if (manualOverride) {
-        if (evaluation.status === "Compliant") {
-          manualOverride = false;
-          targetStatus = "Compliant";
-          overrideNotes = "";
-          waiverReasonType = null;
-          waiverAuthorizedBy = null;
-          waiverExpirationDate = null;
-        } else {
-          const currentDateStr = "2026-06-11";
-          const today = new Date(currentDateStr);
-          let isWaiverExpired = false;
+  if (manualOverride) {
+    if (evaluation.status === "Compliant") {
+      manualOverride = false;
+      targetStatus = "Compliant";
+      overrideNotes = "";
+      waiverReasonType = null;
+      waiverAuthorizedBy = null;
+      waiverExpirationDate = null;
+    } else {
+      const currentDateStr = "2026-06-11";
+      const today = new Date(currentDateStr);
+      let isWaiverExpired = false;
 
-          if (waiverExpirationDate) {
-            const expDate = new Date(waiverExpirationDate);
-            if (expDate <= today) {
-              isWaiverExpired = true;
-            }
-          }
-
-          if (isWaiverExpired) {
-            manualOverride = false;
-            targetStatus = "Expired";
-            overrideNotes = "";
-            waiverReasonType = null;
-            waiverAuthorizedBy = null;
-            waiverExpirationDate = null;
-          } else {
-            targetStatus = "Approved Exception";
-          }
+      if (waiverExpirationDate) {
+        const expDate = new Date(waiverExpirationDate);
+        if (expDate <= today) {
+          isWaiverExpired = true;
         }
       }
 
-      await updateDoc(subRef, {
-        compliance_status: targetStatus,
-        manual_override: manualOverride,
-        override_notes: overrideNotes,
-        waiver_reason_type: waiverReasonType,
-        waiver_authorized_by: waiverAuthorizedBy,
-        waiver_expiration_date: waiverExpirationDate,
-      });
-
-      if (targetStatus === "Compliant") {
-        const subName = sub.company_name || (subSnap.exists() ? (subSnap.data() as Subcontractor).company_name : "Subcontractor");
-        const notifsCol = collection(db, NOTIFICATIONS_COL);
-        const snapNotifs = await getDocs(notifsCol);
-        for (const d of snapNotifs.docs) {
-          const nData = d.data() as Notification;
-          if (
-            (nData.resolved === false || nData.resolved === undefined) &&
-            (nData.project_id === projectId || nData.subcontractor_name === subName)
-          ) {
-            await updateDoc(doc(db, NOTIFICATIONS_COL, d.id), { resolved: true });
-          }
-        }
+      if (isWaiverExpired) {
+        manualOverride = false;
+        targetStatus = "Expired";
+        overrideNotes = "";
+        waiverReasonType = null;
+        waiverAuthorizedBy = null;
+        waiverExpirationDate = null;
+      } else {
+        targetStatus = "Approved Exception";
       }
     }
-
-    // 4. Create Notifications for errors or status locks
-    if (evaluation.errors.length > 0) {
-      const subName = subSnap.exists() ? (subSnap.data() as Subcontractor).company_name : "Subcontractor";
-      
-      let alertType: "danger" | "warning" | "info" = "warning";
-      if (evaluation.status === "Expired") alertType = "danger";
-      else if (evaluation.status === "Insufficient Coverage") alertType = "warning";
-
-      await createNotification({
-        project_id: projectId,
-        project_name: project.name,
-        subcontractor_name: subName,
-        type: alertType,
-        message: "Draft email message ready. Click to view and copy.",
-      });
-    }
-
-    return newCoi;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, coiPath);
-    throw err;
   }
+
+  subs[subIdx] = {
+    ...subs[subIdx],
+    compliance_status: targetStatus,
+    manual_override: manualOverride,
+    override_notes: overrideNotes,
+    waiver_reason_type: waiverReasonType,
+    waiver_authorized_by: waiverAuthorizedBy,
+    waiver_expiration_date: waiverExpirationDate,
+  };
+  write(KEY_SUBS, subs);
+
+  if (targetStatus === "Compliant") {
+    resolveNotificationsFor(projectId, subcontractor.company_name || "Subcontractor");
+  }
+
+  // 5. Create notifications for errors or status locks
+  if (evaluation.errors.length > 0) {
+    const subName = subcontractor.company_name || "Subcontractor";
+
+    let alertType: "danger" | "warning" | "info" = "warning";
+    if (evaluation.status === "Expired") alertType = "danger";
+    else if (evaluation.status === "Insufficient Coverage") alertType = "warning";
+
+    await createNotification({
+      project_id: projectId,
+      project_name: project.name,
+      subcontractor_name: subName,
+      type: alertType,
+      message: "Draft email message ready. Click to view and copy.",
+    });
+  }
+
+  return newCoi;
+}
+
+// =====================================================================
+// Notifications
+// =====================================================================
+
+/**
+ * Mark unresolved notifications matching a project/subcontractor as resolved.
+ */
+function resolveNotificationsFor(projectId: string, subcontractorName: string): void {
+  const notifs = read<Notification>(KEY_NOTIFS);
+  let changed = false;
+  for (const n of notifs) {
+    if (
+      (n.resolved === false || n.resolved === undefined) &&
+      (n.project_id === projectId || n.subcontractor_name === subcontractorName)
+    ) {
+      n.resolved = true;
+      changed = true;
+    }
+  }
+  if (changed) write(KEY_NOTIFS, notifs);
 }
 
 /**
- * Notifications timelines
+ * Notifications timeline (newest first)
  */
 export async function getNotifications(): Promise<Notification[]> {
-  try {
-    const q = query(collection(db, NOTIFICATIONS_COL), orderBy("timestamp", "desc"));
-    const snap = await getDocs(q);
-    return snap.docs.map((doc) => doc.data() as Notification);
-  } catch (err) {
-    handleFirestoreError(err, OperationType.GET, NOTIFICATIONS_COL);
-    return [];
-  }
+  return read<Notification>(KEY_NOTIFS).sort((a, b) =>
+    (b.timestamp || "").localeCompare(a.timestamp || "")
+  );
 }
 
 export async function createNotification(
   notif: Omit<Notification, "id" | "timestamp" | "resolved"> & { resolved?: boolean }
 ): Promise<Notification> {
-  const id = "notif_" + Math.random().toString(36).substring(2, 9);
+  const id = genId("notif");
   const now = new Date().toISOString();
   const newNotif: Notification = {
     ...notif,
     id,
     timestamp: now,
-    resolved: false,
+    resolved: notif.resolved ?? false,
   };
 
-  try {
-    await setDoc(doc(db, NOTIFICATIONS_COL, id), newNotif);
-    return newNotif;
-  } catch (err) {
-    handleFirestoreError(err, OperationType.WRITE, `${NOTIFICATIONS_COL}/${id}`);
-    throw err;
-  }
+  const notifs = read<Notification>(KEY_NOTIFS);
+  notifs.push(newNotif);
+  write(KEY_NOTIFS, notifs);
+  return newNotif;
 }
 
+// =====================================================================
+// Seeding
+// =====================================================================
+
 /**
- * Seeding Routine to make dashboard fully responsive & functional on load.
+ * Seeding routine to make the dashboard fully responsive & functional on load.
  */
 export async function seedInitialData(force = false): Promise<void> {
   try {
     // Check if we already have projects to prevent duplicate seeding
     const currentProjs = await getProjects();
     if (currentProjs.length > 0 && !force) {
-      console.log("Database already populated. Skipping DB Seed.");
+      console.log("Local store already populated. Skipping seed.");
       return;
     }
 
-    console.log("Database is empty. Populating clean visual sample logs...");
+    if (force) {
+      // Reset all collections for a clean re-seed
+      write(KEY_PROJECTS, []);
+      write(KEY_SUBS, []);
+      write(KEY_COIS, []);
+      write(KEY_NOTIFS, []);
+    }
+
+    console.log("Local store is empty. Populating clean visual sample logs...");
 
     // Project 1
     const p1 = await createProject({
@@ -469,7 +431,6 @@ export async function seedInitialData(force = false): Promise<void> {
       trade: "Electrical",
       contract_value: 385000,
     });
-    // Create ACME COI Record
     await submitCoiRecord(p1.id, sub1A.id, {
       file_name: "ACORD25_ACME_Electrical.pdf",
       insured_extracted_name: "ACME Electrical Solutions LLC",
@@ -581,7 +542,6 @@ export async function seedInitialData(force = false): Promise<void> {
       trade: "HVAC",
       contract_value: 125000,
     });
-    // Add sub record with missing limit initially
     await submitCoiRecord(p2.id, sub2B.id, {
       file_name: "vortex_hvac_coi_draft.pdf",
       insured_extracted_name: "Vortex Mechanical LLC",
@@ -598,7 +558,6 @@ export async function seedInitialData(force = false): Promise<void> {
       professional_liability_extracted: 2000000,
       pollution_liability_extracted: 2000000,
     });
-    // Update to show approved override
     await updateSubcontractor(p2.id, sub2B.id, {
       manual_override: true,
       compliance_status: "Compliant",
@@ -648,7 +607,7 @@ export async function seedInitialData(force = false): Promise<void> {
       message: "Warning: Apex Plumbing Insurance Limits ($1M/$500k) do not meet Project threshold requirements.",
     });
 
-    console.log("Database successfully populated with visually rich interactive sample logs!");
+    console.log("Local store successfully populated with visually rich interactive sample logs!");
   } catch (err) {
     console.error("Failed to seed initial collections:", err);
   }
