@@ -94,6 +94,16 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
   const processContractFile = async (file: File) => {
     if (loading) return;
 
+    // The hosted scanner sends the file as base64 JSON; keep it under the
+    // serverless request-body limit (~4.5 MB on Vercel). Base64 adds ~33%.
+    const MAX_UPLOAD_BYTES = 3 * 1024 * 1024;
+    if (file.size > MAX_UPLOAD_BYTES) {
+      alert(
+        `Contract file is ${(file.size / (1024 * 1024)).toFixed(1)} MB. Please upload a file under 3 MB (compress the PDF or export fewer pages).`
+      );
+      return;
+    }
+
     try {
       setLoading(true);
       setLoadingText("Reading contract specifications...");

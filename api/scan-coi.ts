@@ -4,6 +4,9 @@
 // helpers (req.body, res.status, res.json) at runtime.
 import { scanCoi } from "./_scan";
 
+// Allow up to 60s for a real multimodal Gemini scan (default is short on Vercel).
+export const config = { maxDuration: 60 };
+
 export default async function handler(req: any, res: any) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });

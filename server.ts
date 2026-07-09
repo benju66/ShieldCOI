@@ -4,7 +4,10 @@ import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
 import { scanCoi, scanContract } from "./api/_scan";
 
+// Load .env first, then let .env.local override it. This matches Vite's own
+// env precedence and the README, which points users at .env.local for GEMINI_API_KEY.
 dotenv.config();
+dotenv.config({ path: ".env.local", override: true });
 
 async function startServer() {
   const app = express();
