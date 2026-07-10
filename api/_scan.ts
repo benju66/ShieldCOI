@@ -33,7 +33,7 @@ function getGeminiClient(): GoogleGenAI {
  * Falls back to a deterministic simulator when Gemini is unavailable.
  */
 export async function scanCoi(payload: any): Promise<ScanResult> {
-  const { fileData, mimeType, fileName, custom_requirements } = payload || {};
+  const { fileData, mimeType, fileName, custom_requirements, additional_insured_names } = payload || {};
 
   if (!fileData) {
     return { status: 400, body: { error: "No file content provided" } };
@@ -68,6 +68,11 @@ ${custom_requirements.map((req: any) => `- "${req.label}"`).join("\n")}`;
       });
     }
 
+    let aiPromptText = "";
+    if (additional_insured_names && Array.isArray(additional_insured_names) && additional_insured_names.length > 0) {
+      aiPromptText = `\n\nThe project requires these specific entities to be listed as Additional Insured. When populating "additional_insured_named", include any that appear on the certificate even if the wording differs slightly (punctuation, "LLC"/"Inc.", "and its affiliates/officers/agents", etc.):\n${additional_insured_names.map((n: any) => `- "${n}"`).join("\n")}`;
+    }
+
     const promptText = `You are an expert insurance auditor. Extract values solely from the standard ACORD 25 Certificate of Liability Insurance form layout.
 Differentiate between the Commercial General Liability, Automobile Liability, and Workers Compensation sections.
 
@@ -84,7 +89,11 @@ Extract:
 10. "employers_liability_disease_person": Employers' Liability: E.L. DISEASE - EA EMPLOYEE limit ($). Set to 0 if not found.
 11. "employers_liability_disease_limit": Employers' Liability: E.L. DISEASE - POLICY LIMIT ($). Set to 0 if not found.
 12. "professional_liability": Professional Liability (usually under other/additional lines) ($). Set to 0 if not found.
-13. "pollution_liability": Pollution Liability (usually under other/additional lines or endorsements) ($). Set to 0 if not found.${customPromptText}
+13. "pollution_liability": Pollution Liability (usually under other/additional lines or endorsements) ($). Set to 0 if not found.
+14. "additional_insured_named": An array of the exact company/entity names listed as Additional Insured on the certificate — look in the "DESCRIPTION OF OPERATIONS / LOCATIONS / VEHICLES" box and any coverage row where the "ADDL INSD" column is checked. Return [] if none are named.
+15. "additional_insured_blanket": true if the certificate uses BLANKET additional insured language such as "as required by written contract", "where required by written contract", "per blanket endorsement", or references blanket endorsement forms (e.g. CG 20 33, CG 20 38). Otherwise false.
+16. "additional_insured_text": The exact additional-insured wording copied from the Description of Operations box (empty string if none).
+17. "gl_addl_insd": true if the "ADDL INSD" column is checked / marked "Y" on the General Liability (Commercial General Liability) row.${customPromptText}${aiPromptText}
 
 Strictly return ONLY the requested JSON schema.`;
 
@@ -109,6 +118,10 @@ Strictly return ONLY the requested JSON schema.`;
             employers_liability_disease_limit: { type: Type.NUMBER },
             professional_liability: { type: Type.NUMBER },
             pollution_liability: { type: Type.NUMBER },
+            additional_insured_named: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Entities explicitly named as Additional Insured on the certificate." },
+            additional_insured_blanket: { type: Type.BOOLEAN, description: "True if blanket 'as required by written contract' additional insured language is present." },
+            additional_insured_text: { type: Type.STRING, description: "Raw additional insured wording from the Description of Operations box." },
+            gl_addl_insd: { type: Type.BOOLEAN, description: "True if the ADDL INSD column is checked on the General Liability row." },
             custom_extractions: {
               type: Type.OBJECT,
               properties: customObjProperties,
@@ -129,6 +142,10 @@ Strictly return ONLY the requested JSON schema.`;
             "employers_liability_disease_limit",
             "professional_liability",
             "pollution_liability",
+            "additional_insured_named",
+            "additional_insured_blanket",
+            "additional_insured_text",
+            "gl_addl_insd",
           ],
         },
       },
@@ -236,6 +253,25 @@ Strictly return ONLY the requested JSON schema.`;
       });
     }
 
+    // Additional Insured mock: echo the required names as "named" by default;
+    // apex/plumbing → blanket-only (conditional pass); titan/steel → none (fail).
+    const reqAiNames: string[] = Array.isArray(additional_insured_names) ? additional_insured_names : [];
+    let aiNamedMock: string[] = reqAiNames.length > 0 ? [...reqAiNames] : ["Owner / General Contractor (per attached endorsement)"];
+    let aiBlanketMock = true;
+    let aiTextMock = "Certificate holder and owner are additional insureds as required by written contract per attached endorsement.";
+    let aiGlAddlMock = true;
+    if (nameLower.includes("apex") || nameLower.includes("plumbing")) {
+      aiNamedMock = [];
+      aiBlanketMock = true;
+      aiTextMock = "Additional insured status applies where required by written contract.";
+      aiGlAddlMock = true;
+    } else if (nameLower.includes("titan") || nameLower.includes("steel") || nameLower.includes("frame")) {
+      aiNamedMock = [];
+      aiBlanketMock = false;
+      aiTextMock = "";
+      aiGlAddlMock = false;
+    }
+
     // Simulate network/processing latency
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
@@ -258,6 +294,10 @@ Strictly return ONLY the requested JSON schema.`;
           professional_liability: profLiabVal,
           pollution_liability: pollLiabVal,
           custom_extractions: customExtractions,
+          additional_insured_named: aiNamedMock,
+          additional_insured_blanket: aiBlanketMock,
+          additional_insured_text: aiTextMock,
+          gl_addl_insd: aiGlAddlMock,
         },
         simulated: true,
         warning: gemError.message.includes("is not configured")

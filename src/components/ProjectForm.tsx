@@ -39,6 +39,9 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
   const [elDiseaseLimit, setElDiseaseLimit] = useState(1000000);
   const [saving, setSaving] = useState(false);
   const [customRequirements, setCustomRequirements] = useState<{ id: string; label: string; limit: number }[]>([]);
+  const [additionalInsuredRequired, setAdditionalInsuredRequired] = useState(false);
+  const [additionalInsuredNames, setAdditionalInsuredNames] = useState<string[]>([]);
+  const [acceptBlanketAi, setAcceptBlanketAi] = useState(true);
   const [expiredTemplate, setExpiredTemplate] = useState(DEFAULT_EXPIRED_TEMPLATE);
   const [insufficientTemplate, setInsufficientTemplate] = useState(DEFAULT_INSUFFICIENT_TEMPLATE);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
@@ -60,6 +63,9 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
         setElDiseasePerson(projectToEdit.requirements?.employers_liability_disease_person ?? 1000000);
         setElDiseaseLimit(projectToEdit.requirements?.employers_liability_disease_limit ?? 1000000);
         setCustomRequirements(projectToEdit.custom_requirements || []);
+        setAdditionalInsuredRequired(projectToEdit.additional_insured_required ?? false);
+        setAdditionalInsuredNames(projectToEdit.additional_insured_names || []);
+        setAcceptBlanketAi(projectToEdit.accept_blanket_ai ?? true);
         setExpiredTemplate(projectToEdit.email_templates?.expired_template ?? DEFAULT_EXPIRED_TEMPLATE);
         setInsufficientTemplate(projectToEdit.email_templates?.insufficient_template ?? DEFAULT_INSUFFICIENT_TEMPLATE);
         setIsTemplatesOpen(false);
@@ -78,6 +84,9 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
         setElDiseasePerson(1000000);
         setElDiseaseLimit(1000000);
         setCustomRequirements([]);
+        setAdditionalInsuredRequired(false);
+        setAdditionalInsuredNames([]);
+        setAcceptBlanketAi(true);
         setExpiredTemplate(DEFAULT_EXPIRED_TEMPLATE);
         setInsufficientTemplate(DEFAULT_INSUFFICIENT_TEMPLATE);
         setIsTemplatesOpen(false);
@@ -255,6 +264,9 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
           employers_liability_disease_limit: Number(elDiseaseLimit),
         },
         custom_requirements: customRequirements,
+        additional_insured_required: additionalInsuredRequired,
+        additional_insured_names: additionalInsuredNames.map((n) => n.trim()).filter(Boolean),
+        accept_blanket_ai: acceptBlanketAi,
         email_templates: {
           expired_template: expiredTemplate,
           insufficient_template: insufficientTemplate,
@@ -679,6 +691,94 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Additional Insured Verification */}
+            <div id="additional-insured-panel" className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[11px] font-bold text-slate-800">Verify Additional Insured</p>
+                  <p className="text-[10px] text-slate-500">Check that required entities are named as AI on each COI.</p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={additionalInsuredRequired}
+                    onChange={(e) => setAdditionalInsuredRequired(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600 peer-checked:after:bg-white"></div>
+                </label>
+              </div>
+
+              {additionalInsuredRequired && (
+                <div className="space-y-3 pt-1">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                        Required Additional Insured Entities
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setAdditionalInsuredNames([...additionalInsuredNames, ""])}
+                        className="flex items-center space-x-1 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 hover:text-blue-800 border border-blue-200 rounded text-[10px] font-bold cursor-pointer transition-colors"
+                      >
+                        <span>[+] Add Entity</span>
+                      </button>
+                    </div>
+                    {additionalInsuredNames.length > 0 && (
+                      <div className="space-y-2">
+                        {additionalInsuredNames.map((entityName, index) => (
+                          <div key={index} className="grid grid-cols-12 gap-2 items-center">
+                            <div className="col-span-11">
+                              <input
+                                type="text"
+                                placeholder="e.g., Evergreen Development LLC, its officers and agents"
+                                value={entityName}
+                                onChange={(e) => {
+                                  const updated = [...additionalInsuredNames];
+                                  updated[index] = e.target.value;
+                                  setAdditionalInsuredNames(updated);
+                                }}
+                                className="w-full text-xs bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-800"
+                              />
+                            </div>
+                            <div className="col-span-1 flex justify-center">
+                              <button
+                                type="button"
+                                onClick={() => setAdditionalInsuredNames(additionalInsuredNames.filter((_, i) => i !== index))}
+                                className="p-1 rounded cursor-pointer hover:bg-red-50 text-slate-400 hover:text-red-600 border border-transparent hover:border-red-200 transition-all"
+                                title="Remove entity"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-[9.5px] text-slate-500 leading-normal">
+                      Leave empty to simply require that <em>some</em> additional insured status appears on the certificate.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-slate-200 pt-2">
+                    <div className="pr-3">
+                      <p className="text-[11px] font-bold text-slate-800">Accept blanket "as required by written contract"</p>
+                      <p className="text-[10px] text-slate-500">Treat blanket endorsement language as a conditional pass (flagged to verify the endorsement).</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={acceptBlanketAi}
+                        onChange={(e) => setAcceptBlanketAi(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600 peer-checked:after:bg-white"></div>
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* ✉️ Notification Email Templates Configuration */}

@@ -102,6 +102,13 @@ export default function App() {
     employers_liability_disease_limit?: number;
     professional_liability?: number;
     pollution_liability?: number;
+    additional_insured_named?: string[];
+    additional_insured_blanket?: boolean;
+    additional_insured_text?: string;
+    gl_addl_insd?: boolean;
+    file_data?: string;
+    file_mime?: string;
+    field_locations?: { field: string; page?: number; box_2d: number[] }[];
     file_name: string;
     simulated: boolean;
     warning?: string;
@@ -264,6 +271,10 @@ export default function App() {
       employers_liability_disease_limit_extracted: payloadToSave.employers_liability_disease_limit ?? 0,
       professional_liability_extracted: payloadToSave.professional_liability ?? 0,
       pollution_liability_extracted: payloadToSave.pollution_liability ?? 0,
+      additional_insured_named_extracted: payloadToSave.additional_insured_named ?? [],
+      additional_insured_blanket_extracted: payloadToSave.additional_insured_blanket ?? false,
+      additional_insured_text_extracted: payloadToSave.additional_insured_text ?? "",
+      gl_addl_insd_extracted: payloadToSave.gl_addl_insd ?? false,
       extraction_method: payloadToSave.extraction_method || "AI_Scan",
     });
 
@@ -925,6 +936,7 @@ export default function App() {
                         }}
                         onScanComplete={handleScanFinished}
                         customRequirements={selectedProject?.custom_requirements}
+                        additionalInsuredNames={selectedProject?.additional_insured_names}
                       />
                     </div>
                   </div>

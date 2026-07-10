@@ -19,6 +19,10 @@ export interface Project {
   requirements: ProjectRequirements;
   createdAt: string;
   custom_requirements?: { id: string; label: string; limit: number }[];
+  // Additional Insured verification (optional; absent on legacy projects, in which case the check is skipped)
+  additional_insured_required?: boolean;
+  additional_insured_names?: string[];
+  accept_blanket_ai?: boolean; // treat "as required by written contract" blanket language as satisfying the requirement (default true)
   email_templates?: {
     expired_template: string;
     insufficient_template: string;
@@ -85,6 +89,11 @@ export interface CoiRecord {
   validation_errors: string[];
   extraction_method?: "AI_Scan" | "Manual_Entry";
   custom_extractions?: Record<string, number | null>;
+  // Additional Insured extraction facts
+  additional_insured_named_extracted?: string[];
+  additional_insured_blanket_extracted?: boolean;
+  additional_insured_text_extracted?: string;
+  gl_addl_insd_extracted?: boolean;
 }
 
 export interface Notification {

@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { X, Check, ShieldCheck, ShieldAlert, FileWarning, Eye } from "lucide-react";
 import { Project } from "../types";
-import { verifyCompliance } from "../complianceEngine";
+import { verifyCompliance, isNamedAdditionalInsured } from "../complianceEngine";
 import { formatUSD } from "../utils/currency";
+import DocumentViewer, { ACORD25_FIELD_TEMPLATE } from "./DocumentViewer";
 
 interface VerificationDrawerProps {
   isOpen: boolean;
@@ -30,6 +31,13 @@ interface VerificationDrawerProps {
     warning?: string;
     extraction_method?: "AI_Scan" | "Manual_Entry";
     custom_extractions?: Record<string, number | null>;
+    additional_insured_named?: string[];
+    additional_insured_blanket?: boolean;
+    additional_insured_text?: string;
+    gl_addl_insd?: boolean;
+    file_data?: string;
+    file_mime?: string;
+    field_locations?: { field: string; page?: number; box_2d: number[] }[];
   } | null;
   onSave: (
     manualOverride: boolean,
@@ -79,6 +87,13 @@ export default function VerificationDrawer({
     warning?: string;
     extraction_method?: "AI_Scan" | "Manual_Entry";
     custom_extractions?: Record<string, number | null>;
+    additional_insured_named?: string[];
+    additional_insured_blanket?: boolean;
+    additional_insured_text?: string;
+    gl_addl_insd?: boolean;
+    file_data?: string;
+    file_mime?: string;
+    field_locations?: { field: string; page?: number; box_2d: number[] }[];
   } | null>(null);
 
   // Auto reset state on open
@@ -109,6 +124,13 @@ export default function VerificationDrawer({
         warning: extractedData.warning,
         extraction_method: extractedData.extraction_method || "AI_Scan",
         custom_extractions: extractedData.custom_extractions || {},
+        additional_insured_named: extractedData.additional_insured_named || [],
+        additional_insured_blanket: !!extractedData.additional_insured_blanket,
+        additional_insured_text: extractedData.additional_insured_text || "",
+        gl_addl_insd: !!extractedData.gl_addl_insd,
+        file_data: extractedData.file_data,
+        file_mime: extractedData.file_mime,
+        field_locations: extractedData.field_locations,
       });
     }
   }, [isOpen, extractedData]);
@@ -189,8 +211,77 @@ export default function VerificationDrawer({
 
   const isManualMode = activeData.extraction_method === "Manual_Entry";
 
+  // Document-highlight metadata: map each extracted-field key to pass/fail + a short label
+  // so the source-document viewer can color and label the overlay boxes.
+  const aiRequiredNames = (project.additional_insured_names || []).map((n) => (n || "").trim()).filter(Boolean);
+  const aiBlanketOk = !!activeData.additional_insured_blanket && project.accept_blanket_ai !== false;
+  const aiAllOk = !project.additional_insured_required
+    ? true
+    : aiRequiredNames.length > 0
+    ? aiRequiredNames.every((n) => isNamedAdditionalInsured(n, activeData.additional_insured_named || []) || aiBlanketOk)
+    : (activeData.additional_insured_named || []).length > 0 || aiBlanketOk || !!activeData.gl_addl_insd;
+
+  const fieldStatus: Record<string, "pass" | "fail" | "neutral"> = {
+    insured_name: "neutral",
+    gl_each_occurrence: isGlOccPassed ? "pass" : "fail",
+    gl_general_aggregate: isGlAggPassed ? "pass" : "fail",
+    auto_combined_single_limit: isAutoPassed ? "pass" : "fail",
+    workers_comp_statutory: isWcPassed ? "pass" : "fail",
+    policy_expiration_date: isNotExpired ? "pass" : "fail",
+    gl_products_completed: isGlProdPassed ? "pass" : "fail",
+    umbrella_limit: isUmbrellaPassed ? "pass" : "fail",
+    employers_liability_accident: isElAccidentPassed ? "pass" : "fail",
+    employers_liability_disease_person: isElDiseasePersonPassed ? "pass" : "fail",
+    employers_liability_disease_limit: isElDiseaseLimitPassed ? "pass" : "fail",
+    professional_liability: isProfessionalRequired ? (isProfessionalPassed ? "pass" : "fail") : "neutral",
+    pollution_liability: isPollutionRequired ? (isPollutionPassed ? "pass" : "fail") : "neutral",
+    additional_insured: aiAllOk ? "pass" : "fail",
+  };
+  const fieldLabels: Record<string, string> = {
+    insured_name: "Insured",
+    gl_each_occurrence: "GL Occurrence",
+    gl_general_aggregate: "GL Aggregate",
+    auto_combined_single_limit: "Auto CSL",
+    workers_comp_statutory: "Workers' Comp",
+    policy_expiration_date: "Expiration",
+    gl_products_completed: "Products-Comp",
+    umbrella_limit: "Umbrella",
+    employers_liability_accident: "EL Accident",
+    employers_liability_disease_person: "EL Disease (Person)",
+    employers_liability_disease_limit: "EL Disease (Limit)",
+    professional_liability: "Professional",
+    pollution_liability: "Pollution",
+    additional_insured: "Additional Insured",
+  };
+  const hasDocument = !!activeData.file_data;
+
   return (
     <div id="verification-overlay-backdrop" className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex justify-end transition-all select-none">
+
+      {/* Source document pane (side-by-side with the matrix; large screens only) */}
+      {hasDocument && (
+        <div id="document-viewer-pane" className="hidden lg:flex flex-col w-[46vw] max-w-3xl h-full bg-slate-100 border-l border-slate-300 shadow-2xl animate-in slide-in-from-right duration-200">
+          <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+            <span className="text-[9px] bg-slate-200 text-slate-700 border border-slate-300 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+              Source Document
+            </span>
+            <span className="text-[10px] text-slate-500 truncate max-w-[55%]" title={activeData.file_name}>{activeData.file_name}</span>
+          </div>
+          <div className="flex-1 overflow-hidden p-3">
+            <DocumentViewer
+              fileData={activeData.file_data || ""}
+              fileMime={activeData.file_mime || "image/png"}
+              locations={ACORD25_FIELD_TEMPLATE}
+              fieldStatus={fieldStatus}
+              fieldLabels={fieldLabels}
+            />
+          </div>
+          <div className="px-3 py-1.5 bg-slate-50 border-t border-slate-200 text-[9px] text-slate-400 flex-shrink-0">
+            Highlights are AI-estimated — verify against the certificate.
+          </div>
+        </div>
+      )}
+
       <div id="verification-drawer-container" className="w-full max-w-2xl bg-white border-l border-slate-200 h-full flex flex-col shadow-2xl relative animate-in slide-in-from-right duration-200">
         
         {/* Header */}
@@ -831,6 +922,103 @@ export default function VerificationDrawer({
                       </div>
                     );
                   })}
+                </div>
+              )}
+
+              {/* Additional Insured verification */}
+              {project.additional_insured_required && (
+                <div id="drawer-additional-insured-group" className="pt-2.5 border-t border-slate-200 mt-2 space-y-1.5">
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">
+                    Additional Insured
+                  </p>
+
+                  {(project.additional_insured_names || []).filter((n) => (n || "").trim()).length > 0 ? (
+                    (project.additional_insured_names || [])
+                      .filter((n) => (n || "").trim())
+                      .map((reqName, idx) => {
+                        const named = isNamedAdditionalInsured(reqName, activeData.additional_insured_named || []);
+                        const blanketOk = !named && !!activeData.additional_insured_blanket && project.accept_blanket_ai !== false;
+                        const status = named ? "named" : blanketOk ? "blanket" : "missing";
+                        return (
+                          <div
+                            key={`ai-${idx}`}
+                            data-testid={`match-row-ai-${idx}`}
+                            className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
+                              status === "named"
+                                ? "bg-slate-50 border-slate-200"
+                                : status === "blanket"
+                                ? "bg-amber-50 border-amber-200 text-amber-950"
+                                : "bg-red-50 border-red-200 text-red-950"
+                            }`}
+                          >
+                            <div className="col-span-7">
+                              <p className="text-xs font-bold text-slate-800">{reqName}</p>
+                              <p className="text-[10px] text-slate-500">Must be named as Additional Insured</p>
+                            </div>
+                            <div className="col-span-4 text-right">
+                              <p
+                                className={`text-[11px] font-bold ${
+                                  status === "named" ? "text-emerald-700" : status === "blanket" ? "text-amber-700" : "text-red-700"
+                                }`}
+                              >
+                                {status === "named" ? "Named" : status === "blanket" ? "Blanket — verify endorsement" : "Not listed"}
+                              </p>
+                            </div>
+                            <div className="col-span-1 flex justify-center">
+                              {status === "named" ? (
+                                <Check className="h-4 w-4 text-emerald-600" />
+                              ) : status === "blanket" ? (
+                                <span className="text-[10px] text-amber-600 font-bold uppercase" title="Blanket 'as required by written contract' — verify endorsement">⚠</span>
+                              ) : (
+                                <span className="text-[10px] text-red-600 font-bold uppercase">FAIL</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                  ) : (
+                    <div className="p-2.5 rounded border bg-slate-50 border-slate-200">
+                      <p className="text-[11px] text-slate-600">
+                        {activeData.additional_insured_named && activeData.additional_insured_named.length > 0
+                          ? `Named on certificate: ${activeData.additional_insured_named.join(", ")}`
+                          : activeData.additional_insured_blanket
+                          ? `Blanket "as required by written contract" language present — verify endorsement.`
+                          : "No additional insured status found on this certificate."}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Extracted evidence + manual correction */}
+                  <div className="px-1 pt-1 space-y-1.5">
+                    <p className="text-[10px] text-slate-500 leading-snug">
+                      <span className="font-bold">Cert AI language:</span>{" "}
+                      {activeData.additional_insured_text ? `“${activeData.additional_insured_text}”` : "— none extracted —"}
+                    </p>
+                    {isManualMode && (
+                      <div className="space-y-1.5">
+                        <input
+                          type="text"
+                          value={(activeData.additional_insured_named || []).join(", ")}
+                          onChange={(e) =>
+                            setFormData({
+                              ...activeData,
+                              additional_insured_named: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
+                            })
+                          }
+                          placeholder="Named additional insureds (comma-separated)"
+                          className="w-full text-xs bg-white border border-slate-300 rounded px-2 py-1 text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                        <label className="flex items-center space-x-2 text-[11px] text-slate-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={!!activeData.additional_insured_blanket}
+                            onChange={(e) => setFormData({ ...activeData, additional_insured_blanket: e.target.checked })}
+                          />
+                          <span>Blanket "as required by written contract" language present</span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

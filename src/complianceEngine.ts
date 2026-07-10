@@ -1,6 +1,32 @@
 import { Project } from "./types";
 
 /**
+ * Normalizes an entity name for fuzzy comparison — drops punctuation, common
+ * corporate suffixes, and filler words so "ABC Corp." ≈ "abc corporation".
+ */
+export function normalizeEntity(s: string): string {
+  return (s || "")
+    .toLowerCase()
+    .replace(/[.,&]/g, " ")
+    .replace(/\b(llc|inc|incorporated|corp|corporation|company|co|ltd|lp|llp|the|and|its|affiliates|officers|agents|employees)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * True when a required entity appears in the names extracted as Additional
+ * Insured on the certificate (fuzzy, suffix/punctuation-insensitive).
+ */
+export function isNamedAdditionalInsured(reqName: string, namedList: string[] = []): boolean {
+  const reqNorm = normalizeEntity(reqName);
+  if (!reqNorm) return false;
+  return namedList.some((n) => {
+    const nNorm = normalizeEntity(n);
+    return nNorm.length > 0 && (nNorm.includes(reqNorm) || reqNorm.includes(nNorm));
+  });
+}
+
+/**
  * Calculates compliance status and list of errors for a subcontractor's COI record
  * against the parent project's requirements, parsing both the project's global baselines
  * AND the subcontractor's selected trade scope with conditional limit requirements.
@@ -22,6 +48,9 @@ export function verifyCompliance(
     professional_liability?: number;
     pollution_liability?: number;
     custom_extractions?: Record<string, number | null>;
+    additional_insured_named?: string[];
+    additional_insured_blanket?: boolean;
+    gl_addl_insd?: boolean;
   },
   subcontractorTrade: string = "Other Trades",
   currentDateStr: string = "2026-06-11"
@@ -175,10 +204,43 @@ export function verifyCompliance(
     });
   }
 
+  // 14. Additional Insured verification
+  // Skipped entirely on legacy projects (field undefined). "Verify the endorsement"
+  // advisories are conditional passes and are deliberately excluded from the
+  // status-failing check below (same treatment as the expiration grace threshold).
+  if (project.additional_insured_required) {
+    const requiredNames = (project.additional_insured_names || [])
+      .map((n) => (n || "").trim())
+      .filter(Boolean);
+    const namedList = coi.additional_insured_named || [];
+    const blanketPresent = !!coi.additional_insured_blanket;
+    const acceptBlanket = project.accept_blanket_ai !== false; // default: accept blanket "as req'd by written contract"
+
+    if (requiredNames.length > 0) {
+      requiredNames.forEach((reqName) => {
+        if (isNamedAdditionalInsured(reqName, namedList)) return; // explicitly named — passes
+        if (blanketPresent && acceptBlanket) {
+          errors.push(
+            `Additional Insured: "${reqName}" is not explicitly named — relying on blanket "as required by written contract" language. Verify the endorsement (e.g. CG 20 10 / CG 20 33 / CG 20 38).`
+          );
+        } else {
+          errors.push(
+            `Additional Insured: "${reqName}" is not listed as an additional insured on this certificate.`
+          );
+        }
+      });
+    } else if (namedList.length === 0 && !blanketPresent && !coi.gl_addl_insd) {
+      // Required, no specific entities configured, and no AI status of any kind found.
+      errors.push(`Additional Insured: required by project, but no additional insured status was found on this certificate.`);
+    } else if (namedList.length === 0 && blanketPresent && acceptBlanket) {
+      errors.push(`Additional Insured: only blanket "as required by written contract" language found. Verify the endorsement.`);
+    }
+  }
+
   let finalStatus: "Compliant" | "Insufficient Coverage" | "Expired" | "Pending Upload" = "Compliant";
   if (isExpired) {
     finalStatus = "Expired";
-  } else if (errors.some((err) => !err.includes("risk grace threshold"))) {
+  } else if (errors.some((err) => !err.includes("risk grace threshold") && !err.includes("Verify the endorsement"))) {
     // If we have actual limit shortfalls, or missing WC / structural gaps
     finalStatus = "Insufficient Coverage";
   } else {

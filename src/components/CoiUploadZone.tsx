@@ -21,9 +21,17 @@ interface CoiUploadZoneProps {
     warning?: string;
     extraction_method?: "AI_Scan" | "Manual_Entry";
     custom_extractions?: Record<string, number | null>;
+    additional_insured_named?: string[];
+    additional_insured_blanket?: boolean;
+    additional_insured_text?: string;
+    gl_addl_insd?: boolean;
+    file_data?: string;
+    file_mime?: string;
+    field_locations?: { field: string; page?: number; box_2d: number[] }[];
   }) => void;
   onScanStart: () => void;
   customRequirements?: { id: string; label: string; limit: number }[];
+  additionalInsuredNames?: string[];
 }
 
 const SAMPLE_FILES = [
@@ -44,7 +52,7 @@ const SAMPLE_FILES = [
   },
 ];
 
-export default function CoiUploadZone({ onScanComplete, onScanStart, customRequirements }: CoiUploadZoneProps) {
+export default function CoiUploadZone({ onScanComplete, onScanStart, customRequirements, additionalInsuredNames }: CoiUploadZoneProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingText, setLoadingText] = useState("");
@@ -67,6 +75,10 @@ export default function CoiUploadZone({ onScanComplete, onScanStart, customRequi
       employers_liability_disease_limit: 0,
       professional_liability: 0,
       pollution_liability: 0,
+      additional_insured_named: [],
+      additional_insured_blanket: false,
+      additional_insured_text: "",
+      gl_addl_insd: false,
       file_name: "Manual_Entry_Document.pdf",
       simulated: false,
       extraction_method: "Manual_Entry",
@@ -111,6 +123,7 @@ export default function CoiUploadZone({ onScanComplete, onScanStart, customRequi
               mimeType: file.type || "image/png",
               fileName: file.name,
               custom_requirements: customRequirements,
+              additional_insured_names: additionalInsuredNames,
             }),
           });
 
@@ -125,6 +138,8 @@ export default function CoiUploadZone({ onScanComplete, onScanStart, customRequi
               onScanComplete({
                 ...responseData.data,
                 file_name: file.name,
+                file_data: base64Bytes,
+                file_mime: file.type || "image/png",
                 simulated: !!responseData.simulated,
                 warning: responseData.warning,
                 extraction_method: "AI_Scan",
@@ -196,6 +211,7 @@ export default function CoiUploadZone({ onScanComplete, onScanStart, customRequi
           mimeType: "image/png",
           fileName: sampleName,
           custom_requirements: customRequirements,
+          additional_insured_names: additionalInsuredNames,
         }),
       });
 

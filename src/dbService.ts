@@ -237,6 +237,9 @@ export async function submitCoiRecord(
       employers_liability_disease_limit: coiData.employers_liability_disease_limit_extracted,
       professional_liability: coiData.professional_liability_extracted,
       pollution_liability: coiData.pollution_liability_extracted,
+      additional_insured_named: coiData.additional_insured_named_extracted,
+      additional_insured_blanket: coiData.additional_insured_blanket_extracted,
+      gl_addl_insd: coiData.gl_addl_insd_extracted,
     },
     trade
   );
