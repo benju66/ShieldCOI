@@ -2,7 +2,7 @@
 // req/res are typed loosely so this builds on Vercel without requiring the
 // @vercel/node types to be installed locally. Vercel provides the Express-like
 // helpers (req.body, res.status, res.json) at runtime.
-import { scanCoi } from "./_scan";
+import { scanCoi } from "./_scan.js";
 
 // Allow up to 60s for a real multimodal Gemini scan (default is short on Vercel).
 export const config = { maxDuration: 60 };

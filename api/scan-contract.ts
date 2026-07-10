@@ -1,5 +1,5 @@
 // Vercel serverless function: POST /api/scan-contract
-import { scanContract } from "./_scan";
+import { scanContract } from "./_scan.js";
 
 // Allow up to 60s for a real multimodal Gemini scan (default is short on Vercel).
 export const config = { maxDuration: 60 };
