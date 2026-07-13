@@ -1,5 +1,6 @@
 import React, { useState, useRef } from "react";
 import { Upload, FileText, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
+import { getEvaluationDate } from "../settingsService";
 
 interface CoiUploadZoneProps {
   onScanComplete: (data: {
@@ -67,7 +68,7 @@ export default function CoiUploadZone({ onScanComplete, onScanStart, customRequi
       gl_general_aggregate: 0,
       auto_combined_single_limit: 0,
       workers_comp_statutory: false,
-      policy_expiration_date: "2026-06-11", // Default date fallback to match today's date context
+      policy_expiration_date: getEvaluationDate(), // Blank manual entry starts at "today"; user sets the real date
       gl_products_completed: 0,
       umbrella_limit: 0,
       employers_liability_accident: 0,

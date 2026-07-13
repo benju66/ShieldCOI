@@ -1,6 +1,6 @@
 import { Project, Subcontractor, CoiRecord, Notification } from "./types";
 import { verifyCompliance } from "./complianceEngine";
-import { getSettings, saveSettings, AppSettings } from "./settingsService";
+import { getSettings, saveSettings, getEvaluationDate, AppSettings } from "./settingsService";
 
 /**
  * Local-only data layer. All ShieldCOI records are persisted to the browser's
@@ -242,7 +242,8 @@ export async function submitCoiRecord(
       additional_insured_blanket: coiData.additional_insured_blanket_extracted,
       gl_addl_insd: coiData.gl_addl_insd_extracted,
     },
-    trade
+    trade,
+    getEvaluationDate()
   );
 
   const newCoi: CoiRecord = {
@@ -276,7 +277,7 @@ export async function submitCoiRecord(
       waiverAuthorizedBy = null;
       waiverExpirationDate = null;
     } else {
-      const currentDateStr = "2026-06-11";
+      const currentDateStr = getEvaluationDate();
       const today = new Date(currentDateStr);
       let isWaiverExpired = false;
 

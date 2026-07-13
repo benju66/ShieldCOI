@@ -2,9 +2,6 @@ import { useState } from "react";
 import { ShieldAlert, Clock, TrendingDown, FileX, Upload, ArrowRight, CheckCircle2 } from "lucide-react";
 import { Project, Subcontractor, CoiRecord } from "../types";
 
-// Reference "today" — kept in sync with the date the compliance engine evaluates against.
-const REF_DATE = "2026-06-11";
-
 type Kind = "expired" | "insufficient" | "expiring" | "missing";
 
 interface AttentionItem {
@@ -19,6 +16,8 @@ interface NeedsAttentionProps {
   projects: Project[];
   subcontractors: Subcontractor[];
   coiMap: Record<string, CoiRecord>;
+  /** The date "expiring soon" is measured against ("today", or a configured override). */
+  evalDate: string;
   onOpenProject: (projectId: string) => void;
   onUpload: (projectId: string, sub: Subcontractor) => void;
 }
@@ -32,11 +31,11 @@ const KIND_META: Record<Kind, { badge: string; icon: typeof ShieldAlert }> = {
 
 const ORDER: Kind[] = ["expired", "insufficient", "expiring", "missing"];
 
-function daysUntil(dateStr: string): number {
-  return Math.ceil((new Date(dateStr).getTime() - new Date(REF_DATE).getTime()) / (1000 * 60 * 60 * 24));
+function daysUntil(dateStr: string, refDate: string): number {
+  return Math.ceil((new Date(dateStr).getTime() - new Date(refDate).getTime()) / (1000 * 60 * 60 * 24));
 }
 
-export default function NeedsAttention({ projects, subcontractors, coiMap, onOpenProject, onUpload }: NeedsAttentionProps) {
+export default function NeedsAttention({ projects, subcontractors, coiMap, evalDate, onOpenProject, onUpload }: NeedsAttentionProps) {
   const [filter, setFilter] = useState<"all" | Kind>("all");
 
   const projName = (id: string) => projects.find((p) => p.id === id)?.name || "—";
@@ -58,7 +57,7 @@ export default function NeedsAttention({ projects, subcontractors, coiMap, onOpe
     } else if (sub.compliance_status === "Compliant") {
       const exp = coi?.policy_expiration_date_extracted;
       if (exp) {
-        const days = daysUntil(exp);
+        const days = daysUntil(exp, evalDate);
         if (days > 0 && days <= warnDaysOf(pid)) {
           items.push({ ...base, kind: "expiring", detail: `Expires in ${days} day${days === 1 ? "" : "s"}` });
         }

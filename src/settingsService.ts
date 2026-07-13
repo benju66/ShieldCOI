@@ -16,6 +16,12 @@ export interface AppSettings {
     expired_template: string;
     insufficient_template: string;
   };
+  /**
+   * The date compliance checks treat as "today" (expiration / warning grace).
+   * `null` means use the real current date; a "YYYY-MM-DD" string pins it to a
+   * fixed date (useful for demos/testing against the sample data).
+   */
+  evaluation_date: string | null;
 }
 
 const KEY_SETTINGS = "shieldcoi_settings";
@@ -74,6 +80,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     expired_template: DEFAULT_EXPIRED_TEMPLATE,
     insufficient_template: DEFAULT_INSUFFICIENT_TEMPLATE,
   },
+  evaluation_date: null,
 };
 
 /**
@@ -95,11 +102,27 @@ export function getSettings(): AppSettings {
         insufficient_template:
           parsed.email_templates?.insufficient_template ?? DEFAULT_INSUFFICIENT_TEMPLATE,
       },
+      evaluation_date: typeof parsed.evaluation_date === "string" ? parsed.evaluation_date : null,
     };
   } catch (err) {
     console.error("Failed to read settings from localStorage:", err);
     return { ...DEFAULT_SETTINGS, email_templates: { ...DEFAULT_SETTINGS.email_templates } };
   }
+}
+
+/** Today's date as a "YYYY-MM-DD" string, in local time. */
+export function todayISO(): string {
+  const d = new Date();
+  const offsetMs = d.getTimezoneOffset() * 60_000;
+  return new Date(d.getTime() - offsetMs).toISOString().slice(0, 10);
+}
+
+/**
+ * The date compliance checks should treat as "today": the configured override
+ * if set, otherwise the real current date.
+ */
+export function getEvaluationDate(): string {
+  return getSettings().evaluation_date || todayISO();
 }
 
 export function saveSettings(settings: AppSettings): void {

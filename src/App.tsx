@@ -59,6 +59,7 @@ import CoiHistoryDrawer from "./components/CoiHistoryDrawer";
 import { exportToCSV } from "./utils/reportExporter";
 import ExecutivePrintReport from "./components/ExecutivePrintReport";
 import { formatUSD } from "./utils/currency";
+import { getEvaluationDate } from "./settingsService";
 
 export default function App() {
   // DB States
@@ -76,6 +77,8 @@ export default function App() {
   });
   const [isUserGuideOpen, setIsUserGuideOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  // The date compliance is evaluated against (real today, or a configured override).
+  const [evalDate, setEvalDate] = useState(getEvaluationDate());
 
   // History state
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
@@ -396,6 +399,7 @@ export default function App() {
               projects={projects}
               subcontractors={allSubcontractors}
               coiMap={activeCoiMap}
+              evalDate={evalDate}
               onOpenProject={(projId) => {
                 const p = projects.find((x) => x.id === projId);
                 if (p) {
@@ -761,7 +765,7 @@ export default function App() {
 
                                     // Check expiration conditions
                                     const expiration = new Date(coiExpDate);
-                                    const current = new Date("2026-06-11");
+                                    const current = new Date(evalDate);
                                     const isExpired = expiration <= current;
 
                                     let alertClass = "text-slate-600";
@@ -903,6 +907,7 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         usedTrades={Array.from(new Set(allSubcontractors.map((s) => s.trade).filter(Boolean)))}
+        onSaved={() => setEvalDate(getEvaluationDate())}
         onResetMockData={() => runDurableSeeding(true)}
         onDataReloaded={() => loadAllData(true)}
       />
@@ -971,6 +976,7 @@ export default function App() {
         subContractorId={activeSubForUpload?.id || ""}
         subContractorName={activeSubForUpload?.company_name || ""}
         subContractorTrade={activeSubForUpload?.trade || "Other Trades"}
+        evaluationDate={evalDate}
         extractedData={scannedPayload}
         onSave={handleAuditSave}
       />

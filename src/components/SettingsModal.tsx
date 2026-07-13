@@ -3,6 +3,7 @@ import { Sliders, X, Plus, Trash2, Download, Upload, Database, RefreshCw, AlertT
 import {
   getSettings,
   saveSettings,
+  todayISO,
   TRADES_WITH_COVERAGE_RULES,
 } from "../settingsService";
 import { exportAllData, importAllData, clearAllData } from "../dbService";
@@ -12,6 +13,8 @@ interface SettingsModalProps {
   onClose: () => void;
   /** Trade names currently referenced by enrolled subcontractors (for remove guardrails). */
   usedTrades: string[];
+  /** Called after settings are saved so the app can pick up e.g. a new evaluation date. */
+  onSaved: () => void;
   /** Re-seed the sample dataset. */
   onResetMockData: () => void | Promise<void>;
   /** Called after import/clear so the app can re-hydrate from storage. */
@@ -22,6 +25,7 @@ export default function SettingsModal({
   isOpen,
   onClose,
   usedTrades,
+  onSaved,
   onResetMockData,
   onDataReloaded,
 }: SettingsModalProps) {
@@ -29,6 +33,8 @@ export default function SettingsModal({
   const [newTrade, setNewTrade] = useState("");
   const [expiredTemplate, setExpiredTemplate] = useState("");
   const [insufficientTemplate, setInsufficientTemplate] = useState("");
+  const [evalMode, setEvalMode] = useState<"today" | "fixed">("today");
+  const [evalDateOverride, setEvalDateOverride] = useState(todayISO());
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -40,6 +46,8 @@ export default function SettingsModal({
       setTrades(s.trades);
       setExpiredTemplate(s.email_templates.expired_template);
       setInsufficientTemplate(s.email_templates.insufficient_template);
+      setEvalMode(s.evaluation_date ? "fixed" : "today");
+      setEvalDateOverride(s.evaluation_date || todayISO());
       setNewTrade("");
     }
   }, [isOpen]);
@@ -108,8 +116,10 @@ export default function SettingsModal({
         expired_template: expiredTemplate,
         insufficient_template: insufficientTemplate,
       },
+      evaluation_date: evalMode === "fixed" && evalDateOverride ? evalDateOverride : null,
     });
     setSaving(false);
+    onSaved();
     onClose();
   };
 
@@ -332,6 +342,55 @@ export default function SettingsModal({
                 className="w-full text-xs font-sans bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-2 text-slate-800"
               />
             </div>
+          </section>
+
+          {/* Evaluation date */}
+          <section className="space-y-2.5 border-t border-slate-200 pt-5">
+            <div>
+              <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider block">
+                Evaluation date
+              </span>
+              <p className="text-[10px] text-slate-500 mt-0.5">
+                The date compliance checks treat as "today" for expiration and expiring-soon warnings.
+              </p>
+            </div>
+
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="eval-mode"
+                checked={evalMode === "today"}
+                onChange={() => setEvalMode("today")}
+                className="mt-0.5 cursor-pointer"
+              />
+              <span className="text-[11px] text-slate-800">
+                <span className="font-bold">Use today's date</span>
+                <span className="block text-[10px] text-slate-500">Recommended — evaluates against the current date ({todayISO()}).</span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input
+                type="radio"
+                name="eval-mode"
+                checked={evalMode === "fixed"}
+                onChange={() => setEvalMode("fixed")}
+                className="mt-0.5 cursor-pointer"
+              />
+              <span className="text-[11px] text-slate-800">
+                <span className="font-bold">Use a fixed date</span>
+                <span className="block text-[10px] text-slate-500">Pin evaluation to a specific date — handy for demoing the sample data.</span>
+              </span>
+            </label>
+
+            {evalMode === "fixed" && (
+              <input
+                type="date"
+                value={evalDateOverride}
+                onChange={(e) => setEvalDateOverride(e.target.value)}
+                className="ml-6 text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-800"
+              />
+            )}
           </section>
 
           {/* Data Management */}

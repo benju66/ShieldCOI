@@ -53,7 +53,7 @@ export function verifyCompliance(
     gl_addl_insd?: boolean;
   },
   subcontractorTrade: string = "Other Trades",
-  currentDateStr: string = "2026-06-11"
+  currentDateStr: string
 ): { status: "Compliant" | "Insufficient Coverage" | "Expired" | "Pending Upload"; errors: string[] } {
   const errors: string[] = [];
   const req = project.requirements;

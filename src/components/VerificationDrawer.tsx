@@ -13,6 +13,8 @@ interface VerificationDrawerProps {
   subContractorId: string;
   subContractorName: string;
   subContractorTrade?: string;
+  /** The date compliance is evaluated against ("today", or a configured override). */
+  evaluationDate: string;
   extractedData: {
     insured_name: string;
     gl_each_occurrence: number;
@@ -58,6 +60,7 @@ export default function VerificationDrawer({
   subContractorId,
   subContractorName,
   subContractorTrade = "Other Trades",
+  evaluationDate,
   extractedData,
   onSave,
 }: VerificationDrawerProps) {
@@ -112,7 +115,7 @@ export default function VerificationDrawer({
         gl_general_aggregate: extractedData.gl_general_aggregate || 0,
         auto_combined_single_limit: extractedData.auto_combined_single_limit || 0,
         workers_comp_statutory: !!extractedData.workers_comp_statutory,
-        policy_expiration_date: extractedData.policy_expiration_date || "2026-06-11",
+        policy_expiration_date: extractedData.policy_expiration_date || evaluationDate,
         gl_products_completed: extractedData.gl_products_completed || 0,
         umbrella_limit: extractedData.umbrella_limit || 0,
         employers_liability_accident: extractedData.employers_liability_accident || 0,
@@ -144,7 +147,7 @@ export default function VerificationDrawer({
   // Run compliance analysis engine Reactively
   const req = project.requirements;
   const trade = subContractorTrade || "Other Trades";
-  const analysis = verifyCompliance(project, activeData, trade);
+  const analysis = verifyCompliance(project, activeData, trade, evaluationDate);
 
   // Compare each field to see if it meets threshold reactively
   const isGlOccPassed = activeData.gl_each_occurrence >= req.gl_occurrence;
@@ -183,8 +186,7 @@ export default function VerificationDrawer({
   const isPollutionRequired = pollutionTrades.includes(trade);
   const isPollutionPassed = (activeData.pollution_liability ?? 0) >= 2000000;
 
-  const currentYearDateStr = "2026-06-11";
-  const isNotExpired = new Date(activeData.policy_expiration_date) > new Date(currentYearDateStr);
+  const isNotExpired = new Date(activeData.policy_expiration_date) > new Date(evaluationDate);
 
   const finalStatus = override 
     ? "Approved Exception" 
