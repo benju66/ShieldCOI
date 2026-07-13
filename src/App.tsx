@@ -16,7 +16,6 @@ import {
   FileBadge,
   Sparkles,
   Info,
-  Database,
   Mail,
   ChevronRight,
   Sliders,
@@ -31,6 +30,7 @@ import {
 } from "lucide-react";
 
 import UserGuideModal from "./components/UserGuideModal";
+import SettingsModal from "./components/SettingsModal";
 
 import {
   getProjects,
@@ -71,11 +71,11 @@ export default function App() {
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [pageLoading, setPageLoading] = useState(true);
-  const [isSeeding, setIsSeeding] = useState(false);
   const [showWelcomeIntro, setShowWelcomeIntro] = useState<boolean>(() => {
     return localStorage.getItem("shieldcoi_show_welcome") !== "false";
   });
   const [isUserGuideOpen, setIsUserGuideOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   // History state
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
@@ -159,14 +159,11 @@ export default function App() {
 
   // Seeding trigger
   const runDurableSeeding = async (force = false) => {
-    setIsSeeding(true);
     try {
       await seedInitialData(force);
       await loadAllData(true);
     } catch (error) {
       alert("Failed to initialize system default data.");
-    } finally {
-      setIsSeeding(false);
     }
   };
 
@@ -369,14 +366,13 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => runDurableSeeding(true)}
-            id="seed-database-button"
-            disabled={isSeeding}
+            onClick={() => setIsSettingsOpen(true)}
+            id="open-settings-button"
             type="button"
-            className="flex items-center space-x-1 px-2.5 py-1 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 rounded-md text-[11px] shadow-xs cursor-pointer transition-all disabled:opacity-50"
+            className="flex items-center space-x-1.5 px-2.5 py-1 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 rounded-md text-[11px] font-semibold shadow-xs cursor-pointer transition-all"
           >
-            <Database className="h-3 w-3 text-slate-400" />
-            <span>{isSeeding ? "Resetting..." : "Reset Mock Data"}</span>
+            <Sliders className="h-3 w-3 text-slate-400" />
+            <span>Settings</span>
           </button>
 
           <div id="local-mode-panel" className="bg-slate-50 border border-slate-200 pl-2 pr-2.5 py-1 rounded-md flex items-center space-x-2 text-[11px]">
@@ -901,6 +897,14 @@ export default function App() {
       <UserGuideModal
         isOpen={isUserGuideOpen}
         onClose={() => setIsUserGuideOpen(false)}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        usedTrades={Array.from(new Set(allSubcontractors.map((s) => s.trade).filter(Boolean)))}
+        onResetMockData={() => runDurableSeeding(true)}
+        onDataReloaded={() => loadAllData(true)}
       />
 
       <ProjectForm

@@ -1,20 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { FolderPlus, HelpCircle, X, Upload, FileText, RefreshCw } from "lucide-react";
 import { Project } from "../types";
-
-const DEFAULT_EXPIRED_TEMPLATE = `Dear [Subcontractor Name],
-
-This is to notify you that your Certificate of Insurance (COI) for [Project Name] has expired or is about to expire. Please submit a renewed COI as soon as possible to ensure project compliance and avoid payment delays.
-
-Thank you,
-Project Management Team`;
-
-const DEFAULT_INSUFFICIENT_TEMPLATE = `Dear [Subcontractor Name],
-
-We have reviewed your Certificate of Insurance (COI) uploaded for [Project Name]. Our verification indicates that some of your coverage limits do not meet the minimum contract requirements. Please contact your insurance agent to obtain an endorsement or an updated COI satisfying the required limits.
-
-Thank you,
-Project Management Team`;
+import CurrencyInput from "./CurrencyInput";
+import { getSettings } from "../settingsService";
 
 interface ProjectFormProps {
   isOpen: boolean;
@@ -42,12 +30,13 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
   const [additionalInsuredRequired, setAdditionalInsuredRequired] = useState(false);
   const [additionalInsuredNames, setAdditionalInsuredNames] = useState<string[]>([]);
   const [acceptBlanketAi, setAcceptBlanketAi] = useState(true);
-  const [expiredTemplate, setExpiredTemplate] = useState(DEFAULT_EXPIRED_TEMPLATE);
-  const [insufficientTemplate, setInsufficientTemplate] = useState(DEFAULT_INSUFFICIENT_TEMPLATE);
+  const [expiredTemplate, setExpiredTemplate] = useState(() => getSettings().email_templates.expired_template);
+  const [insufficientTemplate, setInsufficientTemplate] = useState(() => getSettings().email_templates.insufficient_template);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
+      const settings = getSettings();
       if (projectToEdit) {
         setName(projectToEdit.name || "");
         setNumber(projectToEdit.number || "");
@@ -66,8 +55,8 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
         setAdditionalInsuredRequired(projectToEdit.additional_insured_required ?? false);
         setAdditionalInsuredNames(projectToEdit.additional_insured_names || []);
         setAcceptBlanketAi(projectToEdit.accept_blanket_ai ?? true);
-        setExpiredTemplate(projectToEdit.email_templates?.expired_template ?? DEFAULT_EXPIRED_TEMPLATE);
-        setInsufficientTemplate(projectToEdit.email_templates?.insufficient_template ?? DEFAULT_INSUFFICIENT_TEMPLATE);
+        setExpiredTemplate(projectToEdit.email_templates?.expired_template ?? settings.email_templates.expired_template);
+        setInsufficientTemplate(projectToEdit.email_templates?.insufficient_template ?? settings.email_templates.insufficient_template);
         setIsTemplatesOpen(false);
       } else {
         setName("");
@@ -87,8 +76,8 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
         setAdditionalInsuredRequired(false);
         setAdditionalInsuredNames([]);
         setAcceptBlanketAi(true);
-        setExpiredTemplate(DEFAULT_EXPIRED_TEMPLATE);
-        setInsufficientTemplate(DEFAULT_INSUFFICIENT_TEMPLATE);
+        setExpiredTemplate(settings.email_templates.expired_template);
+        setInsufficientTemplate(settings.email_templates.insufficient_template);
         setIsTemplatesOpen(false);
       }
     }
@@ -460,13 +449,11 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
                 <label htmlFor="gl-each-occurrence" className="block text-[10px] font-bold text-slate-600 mb-1">
                   General Liability: Each Occurrence Limit ($)
                 </label>
-                <input
+                <CurrencyInput
                   id="gl-each-occurrence"
-                  type="number"
-                  min="0"
                   required
                   value={glOcc}
-                  onChange={(e) => setGlOcc(Number(e.target.value))}
+                  onChange={(v) => setGlOcc(v ?? 0)}
                   className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
                 />
               </div>
@@ -476,13 +463,11 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
                 <label htmlFor="gl-general-aggregate" className="block text-[10px] font-bold text-slate-600 mb-1">
                   General Liability: General Aggregate Limit ($)
                 </label>
-                <input
+                <CurrencyInput
                   id="gl-general-aggregate"
-                  type="number"
-                  min="0"
                   required
                   value={glAgg}
-                  onChange={(e) => setGlAgg(Number(e.target.value))}
+                  onChange={(v) => setGlAgg(v ?? 0)}
                   className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
                 />
               </div>
@@ -492,13 +477,11 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
                 <label htmlFor="auto-combined-single-limit" className="block text-[10px] font-bold text-slate-600 mb-1">
                   Automobile Liability: Combined Single Limit ($)
                 </label>
-                <input
+                <CurrencyInput
                   id="auto-combined-single-limit"
-                  type="number"
-                  min="0"
                   required
                   value={autoLimit}
-                  onChange={(e) => setAutoLimit(Number(e.target.value))}
+                  onChange={(v) => setAutoLimit(v ?? 0)}
                   className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
                 />
               </div>
@@ -508,13 +491,11 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
                 <label htmlFor="gl-products-completed" className="block text-[10px] font-bold text-slate-600 mb-1">
                   General Liability: Products-Completed Aggregate ($)
                 </label>
-                <input
+                <CurrencyInput
                   id="gl-products-completed"
-                  type="number"
-                  min="0"
                   required
                   value={glProd}
-                  onChange={(e) => setGlProd(Number(e.target.value))}
+                  onChange={(v) => setGlProd(v ?? 0)}
                   className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
                 />
               </div>
@@ -524,13 +505,11 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
                 <label htmlFor="umbrella-limit" className="block text-[10px] font-bold text-slate-600 mb-1">
                   Umbrella / Excess Liability Minimum ($)
                 </label>
-                <input
+                <CurrencyInput
                   id="umbrella-limit"
-                  type="number"
-                  min="0"
                   required
                   value={umbrella}
-                  onChange={(e) => setUmbrella(Number(e.target.value))}
+                  onChange={(v) => setUmbrella(v ?? 0)}
                   className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
                 />
               </div>
@@ -540,13 +519,11 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
                 <label htmlFor="el-accident" className="block text-[10px] font-bold text-slate-600 mb-1">
                   Employers' Liability: Accident ($)
                 </label>
-                <input
+                <CurrencyInput
                   id="el-accident"
-                  type="number"
-                  min="0"
                   required
                   value={elAccident}
-                  onChange={(e) => setElAccident(Number(e.target.value))}
+                  onChange={(v) => setElAccident(v ?? 0)}
                   className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
                 />
               </div>
@@ -556,13 +533,11 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
                 <label htmlFor="el-disease-person" className="block text-[10px] font-bold text-slate-600 mb-1">
                   Employers' Liability: Disease (Per Person) ($)
                 </label>
-                <input
+                <CurrencyInput
                   id="el-disease-person"
-                  type="number"
-                  min="0"
                   required
                   value={elDiseasePerson}
-                  onChange={(e) => setElDiseasePerson(Number(e.target.value))}
+                  onChange={(v) => setElDiseasePerson(v ?? 0)}
                   className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
                 />
               </div>
@@ -572,13 +547,11 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
                 <label htmlFor="el-disease-limit" className="block text-[10px] font-bold text-slate-600 mb-1">
                   Employers' Liability: Disease (Policy Limit) ($)
                 </label>
-                <input
+                <CurrencyInput
                   id="el-disease-limit"
-                  type="number"
-                  min="0"
                   required
                   value={elDiseaseLimit}
-                  onChange={(e) => setElDiseaseLimit(Number(e.target.value))}
+                  onChange={(v) => setElDiseaseLimit(v ?? 0)}
                   className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
                 />
               </div>
@@ -659,14 +632,12 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
                         </div>
                         {/* 2. Limit column */}
                         <div className="col-span-5">
-                          <input
-                            type="number"
-                            min="0"
+                          <CurrencyInput
                             placeholder="Limit Amount"
-                            value={reqItem.limit === 0 ? "" : reqItem.limit}
-                            onChange={(e) => {
+                            value={reqItem.limit}
+                            onChange={(v) => {
                               const updated = [...customRequirements];
-                              updated[index] = { ...reqItem, limit: Number(e.target.value) };
+                              updated[index] = { ...reqItem, limit: v ?? 0 };
                               setCustomRequirements(updated);
                             }}
                             className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"

@@ -4,6 +4,7 @@ import { Project } from "../types";
 import { verifyCompliance, isNamedAdditionalInsured } from "../complianceEngine";
 import { formatUSD } from "../utils/currency";
 import DocumentViewer, { ACORD25_FIELD_TEMPLATE } from "./DocumentViewer";
+import CurrencyInput from "./CurrencyInput";
 
 interface VerificationDrawerProps {
   isOpen: boolean;
@@ -389,13 +390,12 @@ export default function VerificationDrawer({
                 </div>
                 <div className="col-span-3 text-right">
                   {isManualMode ? (
-                    <input
-                      type="number"
+                    <CurrencyInput
                       id="input-gl-occurrence"
-                      value={activeData.gl_each_occurrence === 0 ? "" : activeData.gl_each_occurrence}
-                      onChange={(e) => setFormData({ ...activeData, gl_each_occurrence: Number(e.target.value) })}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      value={activeData.gl_each_occurrence}
+                      onChange={(v) => setFormData({ ...activeData, gl_each_occurrence: v ?? 0 })}
+                      placeholder="$0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
                     <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isGlOccPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
@@ -429,13 +429,12 @@ export default function VerificationDrawer({
                 </div>
                 <div className="col-span-3 text-right">
                   {isManualMode ? (
-                    <input
-                      type="number"
+                    <CurrencyInput
                       id="input-gl-aggregate"
-                      value={activeData.gl_general_aggregate === 0 ? "" : activeData.gl_general_aggregate}
-                      onChange={(e) => setFormData({ ...activeData, gl_general_aggregate: Number(e.target.value) })}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      value={activeData.gl_general_aggregate}
+                      onChange={(v) => setFormData({ ...activeData, gl_general_aggregate: v ?? 0 })}
+                      placeholder="$0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
                     <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isGlAggPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
@@ -469,13 +468,12 @@ export default function VerificationDrawer({
                 </div>
                 <div className="col-span-3 text-right">
                   {isManualMode ? (
-                    <input
-                      type="number"
+                    <CurrencyInput
                       id="input-auto-limit"
-                      value={activeData.auto_combined_single_limit === 0 ? "" : activeData.auto_combined_single_limit}
-                      onChange={(e) => setFormData({ ...activeData, auto_combined_single_limit: Number(e.target.value) })}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      value={activeData.auto_combined_single_limit}
+                      onChange={(v) => setFormData({ ...activeData, auto_combined_single_limit: v ?? 0 })}
+                      placeholder="$0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
                     <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isAutoPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
@@ -585,13 +583,12 @@ export default function VerificationDrawer({
                 </div>
                 <div className="col-span-3 text-right">
                   {isManualMode ? (
-                    <input
-                      type="number"
+                    <CurrencyInput
                       id="input-gl-products-completed"
-                      value={activeData.gl_products_completed === 0 ? "" : activeData.gl_products_completed}
-                      onChange={(e) => setFormData({ ...activeData, gl_products_completed: Number(e.target.value) })}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      value={activeData.gl_products_completed}
+                      onChange={(v) => setFormData({ ...activeData, gl_products_completed: v ?? 0 })}
+                      placeholder="$0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
                     <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isGlProdPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
@@ -626,13 +623,12 @@ export default function VerificationDrawer({
                 </div>
                 <div className="col-span-3 text-right">
                   {isManualMode ? (
-                    <input
-                      type="number"
+                    <CurrencyInput
                       id="input-umbrella"
-                      value={activeData.umbrella_limit === 0 ? "" : activeData.umbrella_limit}
-                      onChange={(e) => setFormData({ ...activeData, umbrella_limit: Number(e.target.value) })}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      value={activeData.umbrella_limit}
+                      onChange={(v) => setFormData({ ...activeData, umbrella_limit: v ?? 0 })}
+                      placeholder="$0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
                     <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isUmbrellaPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
@@ -666,13 +662,12 @@ export default function VerificationDrawer({
                 </div>
                 <div className="col-span-3 text-right">
                   {isManualMode ? (
-                    <input
-                      type="number"
+                    <CurrencyInput
                       id="input-el-accident"
-                      value={activeData.employers_liability_accident === 0 ? "" : activeData.employers_liability_accident}
-                      onChange={(e) => setFormData({ ...activeData, employers_liability_accident: Number(e.target.value) })}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      value={activeData.employers_liability_accident}
+                      onChange={(v) => setFormData({ ...activeData, employers_liability_accident: v ?? 0 })}
+                      placeholder="$0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
                     <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isElAccidentPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
@@ -706,13 +701,12 @@ export default function VerificationDrawer({
                 </div>
                 <div className="col-span-3 text-right">
                   {isManualMode ? (
-                    <input
-                      type="number"
+                    <CurrencyInput
                       id="input-el-disease-person"
-                      value={activeData.employers_liability_disease_person === 0 ? "" : activeData.employers_liability_disease_person}
-                      onChange={(e) => setFormData({ ...activeData, employers_liability_disease_person: Number(e.target.value) })}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      value={activeData.employers_liability_disease_person}
+                      onChange={(v) => setFormData({ ...activeData, employers_liability_disease_person: v ?? 0 })}
+                      placeholder="$0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
                     <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isElDiseasePersonPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
@@ -746,13 +740,12 @@ export default function VerificationDrawer({
                 </div>
                 <div className="col-span-3 text-right">
                   {isManualMode ? (
-                    <input
-                      type="number"
+                    <CurrencyInput
                       id="input-el-disease-limit"
-                      value={activeData.employers_liability_disease_limit === 0 ? "" : activeData.employers_liability_disease_limit}
-                      onChange={(e) => setFormData({ ...activeData, employers_liability_disease_limit: Number(e.target.value) })}
-                      placeholder="0"
-                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      value={activeData.employers_liability_disease_limit}
+                      onChange={(v) => setFormData({ ...activeData, employers_liability_disease_limit: v ?? 0 })}
+                      placeholder="$0"
+                      className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
                     <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isElDiseaseLimitPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
@@ -788,12 +781,11 @@ export default function VerificationDrawer({
                   </div>
                   <div className="col-span-3 text-right">
                     {isManualMode ? (
-                      <input
-                        type="number"
+                      <CurrencyInput
                         id="input-professional-liability"
-                        value={activeData.professional_liability === 0 ? "" : activeData.professional_liability}
-                        onChange={(e) => setFormData({ ...activeData, professional_liability: Number(e.target.value) })}
-                        placeholder="0"
+                        value={activeData.professional_liability}
+                        onChange={(v) => setFormData({ ...activeData, professional_liability: v ?? 0 })}
+                        placeholder="$0"
                         className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       />
                     ) : (
@@ -831,12 +823,11 @@ export default function VerificationDrawer({
                   </div>
                   <div className="col-span-3 text-right">
                     {isManualMode ? (
-                      <input
-                        type="number"
+                      <CurrencyInput
                         id="input-pollution-liability"
-                        value={activeData.pollution_liability === 0 ? "" : activeData.pollution_liability}
-                        onChange={(e) => setFormData({ ...activeData, pollution_liability: Number(e.target.value) })}
-                        placeholder="0"
+                        value={activeData.pollution_liability}
+                        onChange={(v) => setFormData({ ...activeData, pollution_liability: v ?? 0 })}
+                        placeholder="$0"
                         className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       />
                     ) : (
@@ -890,15 +881,14 @@ export default function VerificationDrawer({
                         </div>
                         <div className="col-span-3 text-right">
                           {isManualMode ? (
-                            <input
-                              type="number"
-                              value={extractedValue === null ? "" : extractedValue}
-                              onChange={(e) => {
-                                const val = e.target.value === "" ? null : Number(e.target.value);
+                            <CurrencyInput
+                              value={extractedValue}
+                              blankValue={null}
+                              onChange={(val) => {
                                 const updatedEx = { ...customEx, [label]: val };
                                 setFormData({ ...activeData, custom_extractions: updatedEx });
                               }}
-                              placeholder="0"
+                              placeholder="Not Found"
                               className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                             />
                           ) : (

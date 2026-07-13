@@ -1,5 +1,7 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { UserPlus, X } from "lucide-react";
+import CurrencyInput from "./CurrencyInput";
+import { getSettings } from "../settingsService";
 
 interface SubcontractorModalProps {
   isOpen: boolean;
@@ -10,10 +12,20 @@ interface SubcontractorModalProps {
 
 export default function SubcontractorModal({ isOpen, onClose, projectName, onAdd }: SubcontractorModalProps) {
   const [companyName, setCompanyName] = useState("");
-  const [trade, setTrade] = useState("Environmental");
+  const [trades, setTrades] = useState<string[]>([]);
+  const [trade, setTrade] = useState("");
   const [contractValue, setContractValue] = useState(150000);
   const [vendorType, setVendorType] = useState<"Subcontractor" | "Supplier">("Subcontractor");
   const [submitting, setSubmitting] = useState(false);
+
+  // Load the configurable Trade Scope Package list when the modal opens.
+  useEffect(() => {
+    if (isOpen) {
+      const list = getSettings().trades;
+      setTrades(list);
+      setTrade((cur) => (cur && list.includes(cur) ? cur : list[0] || ""));
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -28,7 +40,7 @@ export default function SubcontractorModal({ isOpen, onClose, projectName, onAdd
       setSubmitting(true);
       await onAdd(companyName, trade, Number(contractValue), vendorType);
       setCompanyName("");
-      setTrade("Environmental");
+      setTrade(trades[0] || "");
       setContractValue(150000);
       setVendorType("Subcontractor");
       onClose();
@@ -110,28 +122,7 @@ export default function SubcontractorModal({ isOpen, onClose, projectName, onAdd
               onChange={(e) => setTrade(e.target.value)}
               className="w-full text-xs bg-slate-50 border border-slate-200 focus:bg-white focus:border-blue-500 focus:outline-none rounded p-2 text-slate-800 cursor-pointer"
             >
-              {[
-                "Environmental",
-                "Surveying",
-                "Earthwork",
-                "Concrete (Precast)",
-                "Concrete (with Crane)",
-                "Concrete (Standard)",
-                "Masonry",
-                "Rough Carpentry (with Crane)",
-                "Rough Carpentry (Standard)",
-                "Siding",
-                "Roofing",
-                "Windows",
-                "Drywall",
-                "Pool",
-                "Elevators",
-                "Fire Sprinkler",
-                "Plumbing",
-                "HVAC",
-                "Electrical",
-                "Other Trades",
-              ].map((t) => (
+              {trades.map((t) => (
                 <option key={t} value={t}>
                   {t}
                 </option>
@@ -144,14 +135,12 @@ export default function SubcontractorModal({ isOpen, onClose, projectName, onAdd
             <label htmlFor="subcontractor-contract-value" className="block text-[11px] font-bold text-slate-700 mb-1">
               Assigned Contract Value ($) *
             </label>
-            <input
+            <CurrencyInput
               id="subcontractor-contract-value"
-              type="number"
-              min="1"
               required
               value={contractValue}
-              onChange={(e) => setContractValue(Number(e.target.value))}
-              placeholder="e.g. 150000"
+              onChange={(v) => setContractValue(v ?? 0)}
+              placeholder="e.g. $150,000"
               className="w-full text-xs font-mono bg-slate-50 border border-slate-200 focus:bg-white focus:border-blue-500 focus:outline-none rounded p-2 text-slate-800"
             />
           </div>

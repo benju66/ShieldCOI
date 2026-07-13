@@ -1,5 +1,6 @@
 import { Project, Subcontractor, CoiRecord, Notification } from "./types";
 import { verifyCompliance } from "./complianceEngine";
+import { getSettings, saveSettings, AppSettings } from "./settingsService";
 
 /**
  * Local-only data layer. All ShieldCOI records are persisted to the browser's
@@ -387,10 +388,31 @@ export async function createNotification(
 // Seeding
 // =====================================================================
 
+let seedingInFlight: Promise<void> | null = null;
+
 /**
  * Seeding routine to make the dashboard fully responsive & functional on load.
+ *
+ * Concurrent non-forced calls share a single in-flight run so the sample data
+ * can't be seeded twice: React StrictMode double-invokes the boot effect in dev,
+ * and the async "already populated?" check below can't see a racing sibling
+ * call's not-yet-written projects on its own. The claim is assigned
+ * synchronously (before the first await), so the second caller always observes
+ * it and returns the same promise instead of starting a second seed.
  */
 export async function seedInitialData(force = false): Promise<void> {
+  if (!force && seedingInFlight) return seedingInFlight;
+  const run = performSeed(force);
+  if (!force) {
+    seedingInFlight = run;
+    void run.finally(() => {
+      seedingInFlight = null;
+    });
+  }
+  return run;
+}
+
+async function performSeed(force: boolean): Promise<void> {
   try {
     // Check if we already have projects to prevent duplicate seeding
     const currentProjs = await getProjects();
@@ -614,4 +636,71 @@ export async function seedInitialData(force = false): Promise<void> {
   } catch (err) {
     console.error("Failed to seed initial collections:", err);
   }
+}
+
+// =====================================================================
+// Data management (export / import / clear)
+// =====================================================================
+
+interface ShieldCoiExport {
+  _type: "shieldcoi_export";
+  _version: number;
+  exported_at: string;
+  projects: Project[];
+  subcontractors: Subcontractor[];
+  cois: CoiRecord[];
+  notifications: Notification[];
+  settings: AppSettings;
+}
+
+/**
+ * Serialize every record collection plus org settings to a JSON string suitable
+ * for download and later re-import. This is the manual backup path while the app
+ * has no backend.
+ */
+export function exportAllData(): string {
+  const payload: ShieldCoiExport = {
+    _type: "shieldcoi_export",
+    _version: 1,
+    exported_at: new Date().toISOString(),
+    projects: read<Project>(KEY_PROJECTS),
+    subcontractors: read<Subcontractor>(KEY_SUBS),
+    cois: read<CoiRecord>(KEY_COIS),
+    notifications: read<Notification>(KEY_NOTIFS),
+    settings: getSettings(),
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+/**
+ * Replace all local data with the contents of a previously exported file.
+ * Throws if the JSON is unparseable or clearly not a ShieldCOI export.
+ */
+export function importAllData(json: string): void {
+  let data: Partial<ShieldCoiExport>;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    throw new Error("That file isn't valid JSON.");
+  }
+  if (!data || typeof data !== "object" || !Array.isArray(data.projects)) {
+    throw new Error("That file doesn't look like a ShieldCOI export.");
+  }
+
+  write(KEY_PROJECTS, data.projects ?? []);
+  write(KEY_SUBS, data.subcontractors ?? []);
+  write(KEY_COIS, data.cois ?? []);
+  write(KEY_NOTIFS, data.notifications ?? []);
+  if (data.settings) saveSettings(data.settings);
+}
+
+/**
+ * Wipe all record collections (projects, subcontractors, COIs, notifications).
+ * Org settings are intentionally preserved.
+ */
+export function clearAllData(): void {
+  write(KEY_PROJECTS, []);
+  write(KEY_SUBS, []);
+  write(KEY_COIS, []);
+  write(KEY_NOTIFS, []);
 }
