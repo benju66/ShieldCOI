@@ -26,7 +26,9 @@ import {
   Download,
   Printer,
   X,
-  HelpCircle
+  HelpCircle,
+  Archive,
+  ArchiveRestore
 } from "lucide-react";
 
 import UserGuideModal from "./components/UserGuideModal";
@@ -55,6 +57,7 @@ import SubcontractorModal from "./components/SubcontractorModal";
 import CoiUploadZone from "./components/CoiUploadZone";
 import VerificationDrawer from "./components/VerificationDrawer";
 import NotificationList from "./components/NotificationList";
+import VendorsView from "./components/VendorsView";
 import CoiHistoryDrawer from "./components/CoiHistoryDrawer";
 import { exportToCSV } from "./utils/reportExporter";
 import ExecutivePrintReport from "./components/ExecutivePrintReport";
@@ -71,6 +74,7 @@ export default function App() {
   // UI States
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [projectFilter, setProjectFilter] = useState<"active" | "archived" | "all">("active");
   const [pageLoading, setPageLoading] = useState(true);
   const [showWelcomeIntro, setShowWelcomeIntro] = useState<boolean>(() => {
     return localStorage.getItem("shieldcoi_show_welcome") !== "false";
@@ -92,7 +96,7 @@ export default function App() {
 
   // Scanning facts to share with Drawer
   const [isScanningActive, setIsScanningActive] = useState(false);
-  const [view, setView] = useState<"home" | "projects">("home");
+  const [view, setView] = useState<"home" | "projects" | "vendors">("home");
   const [scannedPayload, setScannedPayload] = useState<{
     insured_name: string;
     gl_each_occurrence: number;
@@ -185,12 +189,21 @@ export default function App() {
     })();
   }, []);
 
-  // Filter projects by searchQuery
-  const filteredProjects = projects.filter(
-    (p) =>
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.number.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Active vs archived split. Archived projects are hidden from dashboards, triage,
+  // and vendor roll-ups — only surfaced under the Archived filter in the directory.
+  const activeProjects = projects.filter((p) => !p.archived);
+  const archivedCount = projects.length - activeProjects.length;
+  const activeProjectIds = new Set(activeProjects.map((p) => p.id));
+  const liveSubcontractors = allSubcontractors.filter((s) => activeProjectIds.has(s.project_id));
+
+  // Projects shown in the directory: filtered by the active/archived tab, then search.
+  const filteredProjects = projects
+    .filter((p) => (projectFilter === "all" ? true : projectFilter === "archived" ? !!p.archived : !p.archived))
+    .filter(
+      (p) =>
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.number.toLowerCase().includes(searchQuery.toLowerCase())
+    );
 
   // Subcontractors belonging to active project detail
   const activeSubs = allSubcontractors.filter((s) => s.project_id === selectedProject?.id);
@@ -221,6 +234,12 @@ export default function App() {
     } else {
       await createProject(projectData);
     }
+    await loadAllData();
+  };
+
+  // Archive / restore a project (reversible; hides it from active views)
+  const handleToggleArchive = async (project: Project) => {
+    await updateProject(project.id, { archived: !project.archived });
     await loadAllData();
   };
 
@@ -354,6 +373,13 @@ export default function App() {
           >
             Projects
           </button>
+          <button
+            type="button"
+            onClick={() => setView("vendors")}
+            className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer ${view === "vendors" ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}
+          >
+            Vendors
+          </button>
         </nav>
 
         {/* Database controllers & Auth simulation */}
@@ -394,10 +420,10 @@ export default function App() {
         {/* Home view: portfolio KPIs + cross-project triage worklist */}
         {view === "home" && (
           <div className="space-y-4">
-            <DashboardStats projects={projects} subcontractors={allSubcontractors} />
+            <DashboardStats projects={activeProjects} subcontractors={liveSubcontractors} />
             <NeedsAttention
-              projects={projects}
-              subcontractors={allSubcontractors}
+              projects={activeProjects}
+              subcontractors={liveSubcontractors}
               coiMap={activeCoiMap}
               evalDate={evalDate}
               onOpenProject={(projId) => {
@@ -430,7 +456,7 @@ export default function App() {
           <section id="projects-index-section" className="col-span-1 lg:col-span-4 bg-white border border-slate-200 rounded-lg p-3.5 shadow-xs flex flex-col max-h-[85vh]">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Active Projects
+                Projects
               </span>
               <button
                 onClick={() => setIsProjModalOpen(true)}
@@ -456,11 +482,35 @@ export default function App() {
               <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
             </div>
 
+            {/* Active / archived filter */}
+            <div id="project-status-filter" className="mt-2.5 flex items-center gap-1">
+              {([
+                { key: "active", label: "Active", count: activeProjects.length },
+                { key: "archived", label: "Archived", count: archivedCount },
+                { key: "all", label: "All", count: projects.length },
+              ] as const).map((f) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => setProjectFilter(f.key)}
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-colors cursor-pointer ${
+                    projectFilter === f.key
+                      ? "bg-slate-800 text-white border-slate-800"
+                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  {f.label} {f.count}
+                </button>
+              ))}
+            </div>
+
             {/* Project List */}
             <div id="project-directory-list" className="mt-3.5 space-y-2 overflow-y-auto max-h-[380px] pr-1">
               {filteredProjects.length === 0 ? (
                 <div className="text-center py-10 text-slate-400">
-                  <p className="text-xs">No active projects matching filter query.</p>
+                  <p className="text-xs">
+                    {projectFilter === "archived" ? "No archived projects." : "No projects match your filter."}
+                  </p>
                 </div>
               ) : (
                 filteredProjects.map((p) => {
@@ -487,9 +537,15 @@ export default function App() {
                         <span className="text-[10px] font-mono font-bold text-blue-600">
                           {p.number}
                         </span>
-                        <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded uppercase tracking-wider ${statusInfo.color}`}>
-                          {statusInfo.label}
-                        </span>
+                        {p.archived ? (
+                          <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded uppercase tracking-wider text-slate-500 bg-slate-100 border border-slate-200 flex items-center gap-1">
+                            <Archive className="h-2.5 w-2.5" /> Archived
+                          </span>
+                        ) : (
+                          <span className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded uppercase tracking-wider ${statusInfo.color}`}>
+                            {statusInfo.label}
+                          </span>
+                        )}
                       </div>
                       <h4 className="text-xs font-bold text-slate-800 tracking-tight mt-1 group-hover:text-blue-600 transition-colors font-display line-clamp-1">
                         {p.name}
@@ -518,7 +574,22 @@ export default function App() {
             {/* Conditional Sub-View Workspace */}
             {selectedProject ? (
               <div id="project-details-active-view" className="bg-white border border-slate-200 rounded-lg p-5 shadow-xs space-y-4">
-                
+
+                {selectedProject.archived && (
+                  <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-2 text-[11px] text-amber-800">
+                      <Archive className="h-3.5 w-3.5 shrink-0" />
+                      <span className="font-semibold">Archived — hidden from dashboards, triage, and vendor roll-ups.</span>
+                    </div>
+                    <button
+                      onClick={() => handleToggleArchive(selectedProject)}
+                      className="flex items-center gap-1 px-2.5 py-1 bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 rounded-md text-[10px] font-bold cursor-pointer shrink-0"
+                    >
+                      <ArchiveRestore className="h-3 w-3" /> Restore
+                    </button>
+                  </div>
+                )}
+
                 {/* 1. Detail Header */}
                 <div id="active-project-infobar" className="flex flex-col md:flex-row md:items-center justify-between pb-3.5 border-b border-slate-100 gap-4">
                   <div className="flex items-start space-x-2.5">
@@ -549,6 +620,13 @@ export default function App() {
                             className="p-1 rounded bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-slate-500 hover:text-blue-600 cursor-pointer transition-all flex items-center justify-center"
                           >
                             <Edit2 className="h-3 w-3" />
+                          </button>
+                          <button
+                            onClick={() => handleToggleArchive(selectedProject)}
+                            title={selectedProject.archived ? "Restore project to active" : "Archive project"}
+                            className="p-1 rounded bg-slate-50 hover:bg-amber-50 border border-slate-200 hover:border-amber-300 text-slate-500 hover:text-amber-600 cursor-pointer transition-all flex items-center justify-center"
+                          >
+                            {selectedProject.archived ? <ArchiveRestore className="h-3 w-3" /> : <Archive className="h-3 w-3" />}
                           </button>
                           <button
                             onClick={async () => {
@@ -894,6 +972,25 @@ export default function App() {
             )}
           </section>
         </div>
+        )}
+
+        {/* Vendors view: every company rolled up across projects */}
+        {view === "vendors" && (
+          <VendorsView
+            projects={activeProjects}
+            subcontractors={liveSubcontractors}
+            coiMap={activeCoiMap}
+            evalDate={evalDate}
+            onOpenProject={(projId) => {
+              const p = projects.find((x) => x.id === projId);
+              if (p) {
+                setSelectedProject(p);
+                setActiveSubForUpload(null);
+                setScannedPayload(null);
+                setView("projects");
+              }
+            }}
+          />
         )}
       </main>
 

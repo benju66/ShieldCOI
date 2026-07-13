@@ -590,6 +590,29 @@ async function performSeed(force: boolean): Promise<void> {
       override_notes: "Approved via Exception: Risk Committee reviewed low risk installation height. Exemption granted by Project Manager.",
     });
 
+    // Sub 2C - ACME Electrical again (same vendor as Project 1, different legal suffix)
+    const sub2C = await createSubcontractor(p2.id, {
+      company_name: "ACME Electrical Solutions, Inc.",
+      trade: "Electrical",
+      contract_value: 210000,
+    });
+    await submitCoiRecord(p2.id, sub2C.id, {
+      file_name: "ACME_Electrical_Evergreen_2026.pdf",
+      insured_extracted_name: "ACME Electrical Solutions Inc",
+      gl_occurrence_extracted: 2000000,
+      gl_aggregate_extracted: 4000000,
+      auto_combined_single_limit_extracted: 1000000,
+      workers_comp_statutory_extracted: true,
+      policy_expiration_date_extracted: "2027-03-01",
+      gl_products_completed_extracted: 2000000,
+      umbrella_limit_extracted: 5000000,
+      employers_liability_accident_extracted: 1000000,
+      employers_liability_disease_person_extracted: 1000000,
+      employers_liability_disease_limit_extracted: 1000000,
+      professional_liability_extracted: 2000000,
+      pollution_liability_extracted: 0,
+    });
+
     // Project 3
     const p3 = await createProject({
       name: "Summit Heights Canopy",
@@ -614,6 +637,55 @@ async function performSeed(force: boolean): Promise<void> {
       company_name: "Summit Roofing Specialists",
       trade: "Roofing",
       contract_value: 145000,
+    });
+
+    // Sub 3B - ACME Electrical a third time, awaiting its certificate here
+    await createSubcontractor(p3.id, {
+      company_name: "Acme Electrical Solutions",
+      trade: "Electrical",
+      contract_value: 175000,
+    });
+
+    // Project 4 (archived / completed) — hidden from active dashboards, triage, and
+    // vendor roll-ups. ACME is on this one too, so its "active projects" count stays 3.
+    const p4 = await createProject({
+      name: "Harbor Point Renovation",
+      number: "P-2025-11",
+      target_completion_date: "2026-03-30",
+      archived: true,
+      requirements: {
+        gl_occurrence: 2000000,
+        gl_aggregate: 4000000,
+        auto_limit: 1000000,
+        workers_comp: true,
+        warn_days_out: 60,
+        gl_products_completed: 2000000,
+        umbrella_limit: 1000000,
+        employers_liability_accident: 1000000,
+        employers_liability_disease_person: 1000000,
+        employers_liability_disease_limit: 1000000,
+      },
+    });
+    const sub4A = await createSubcontractor(p4.id, {
+      company_name: "ACME Electrical Solutions LLC",
+      trade: "Electrical",
+      contract_value: 260000,
+    });
+    await submitCoiRecord(p4.id, sub4A.id, {
+      file_name: "ACME_Electrical_HarborPoint_2025.pdf",
+      insured_extracted_name: "ACME Electrical Solutions LLC",
+      gl_occurrence_extracted: 2000000,
+      gl_aggregate_extracted: 4000000,
+      auto_combined_single_limit_extracted: 1000000,
+      workers_comp_statutory_extracted: true,
+      policy_expiration_date_extracted: "2026-04-30",
+      gl_products_completed_extracted: 2000000,
+      umbrella_limit_extracted: 5000000,
+      employers_liability_accident_extracted: 1000000,
+      employers_liability_disease_person_extracted: 1000000,
+      employers_liability_disease_limit_extracted: 1000000,
+      professional_liability_extracted: 2000000,
+      pollution_liability_extracted: 0,
     });
 
     // Seed introductory notifications explicitly

@@ -18,6 +18,8 @@ export interface Project {
   target_completion_date: string; // YYYY-MM-DD
   requirements: ProjectRequirements;
   createdAt: string;
+  /** Archived projects are hidden from active dashboards, triage, and vendor roll-ups. Absent = active. */
+  archived?: boolean;
   custom_requirements?: { id: string; label: string; limit: number }[];
   // Additional Insured verification (optional; absent on legacy projects, in which case the check is skipped)
   additional_insured_required?: boolean;
