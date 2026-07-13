@@ -49,6 +49,7 @@ import {
 
 import { Project, Subcontractor, Notification, CoiRecord } from "./types";
 import DashboardStats from "./components/DashboardStats";
+import NeedsAttention from "./components/NeedsAttention";
 import ProjectForm from "./components/ProjectForm";
 import SubcontractorModal from "./components/SubcontractorModal";
 import CoiUploadZone from "./components/CoiUploadZone";
@@ -88,6 +89,7 @@ export default function App() {
 
   // Scanning facts to share with Drawer
   const [isScanningActive, setIsScanningActive] = useState(false);
+  const [view, setView] = useState<"home" | "projects">("home");
   const [scannedPayload, setScannedPayload] = useState<{
     insured_name: string;
     gl_each_occurrence: number;
@@ -336,6 +338,24 @@ export default function App() {
           </div>
         </div>
 
+        {/* Primary navigation */}
+        <nav className="hidden md:flex items-center gap-1 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setView("home")}
+            className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer ${view === "home" ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}
+          >
+            Home
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("projects")}
+            className={`px-3 py-1.5 rounded-md transition-colors cursor-pointer ${view === "projects" ? "bg-blue-50 text-blue-700" : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"}`}
+          >
+            Projects
+          </button>
+        </nav>
+
         {/* Database controllers & Auth simulation */}
         <div className="flex items-center space-x-2">
           {/* User Guide Button */}
@@ -372,9 +392,38 @@ export default function App() {
       {/* 2. Main Dashboard Layout Area */}
       <main id="app-viewport-pane" className="flex-1 w-full max-w-[1600px] mx-auto px-6 py-4 flex flex-col h-full lg:overflow-hidden">
         
-        {/* Dynamic high level stats header */}
-        <DashboardStats projects={projects} subcontractors={allSubcontractors} />
+        {/* Home view: portfolio KPIs + cross-project triage worklist */}
+        {view === "home" && (
+          <div className="space-y-4">
+            <DashboardStats projects={projects} subcontractors={allSubcontractors} />
+            <NeedsAttention
+              projects={projects}
+              subcontractors={allSubcontractors}
+              coiMap={activeCoiMap}
+              onOpenProject={(projId) => {
+                const p = projects.find((x) => x.id === projId);
+                if (p) {
+                  setSelectedProject(p);
+                  setActiveSubForUpload(null);
+                  setScannedPayload(null);
+                  setView("projects");
+                }
+              }}
+              onUpload={(projId, sub) => {
+                const p = projects.find((x) => x.id === projId);
+                if (p) {
+                  setSelectedProject(p);
+                  setScannedPayload(null);
+                  setActiveSubForUpload(sub);
+                  setView("projects");
+                }
+              }}
+            />
+          </div>
+        )}
 
+        {/* Projects view: project list + selected-project detail */}
+        {view === "projects" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 flex-1 items-start">
           
           {/* Left Column Section: Projects Index Directory */}
@@ -1004,6 +1053,7 @@ export default function App() {
             )}
           </section>
         </div>
+        )}
       </main>
 
       {/* 3. Global Modal Components */}
