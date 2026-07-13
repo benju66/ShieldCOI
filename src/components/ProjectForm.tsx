@@ -452,7 +452,7 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
             {/* Threshold Configuration Panel */}
             <div id="threshold-config-panel" className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-3">
               <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider flex items-center">
-                Insurance Aggregates Setup
+                Insurance requirements
               </span>
 
               {/* General Liability Occurrence */}

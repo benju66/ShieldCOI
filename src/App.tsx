@@ -311,8 +311,8 @@ export default function App() {
     return (
       <div id="boot-loader-layer" className="min-h-screen bg-slate-50 flex flex-col items-center justify-center text-slate-800">
         <RefreshCw className="h-8 w-8 text-blue-600 animate-spin mb-4" />
-        <h3 className="text-sm font-semibold tracking-wide text-slate-800">ShieldCOI: Booting Compliance Ledger...</h3>
-        <span className="text-xs text-slate-500 mt-1">Loading local compliance records & verification rules</span>
+        <h3 className="text-sm font-semibold tracking-wide text-slate-800">Loading Shield COI…</h3>
+        <span className="text-xs text-slate-500 mt-1">Preparing your compliance records</span>
       </div>
     );
   }
@@ -333,7 +333,7 @@ export default function App() {
               <span className="text-slate-800 uppercase tracking-wide">COI</span>
             </h1>
             <p className="text-[10px] text-slate-500 tracking-normal font-medium">
-              Project-Level Insurance Compliance Manager
+              Certificate of insurance compliance
             </p>
           </div>
         </div>
@@ -498,7 +498,7 @@ export default function App() {
                       <div className="flex items-center justify-between w-full mt-2 pt-2 border-t border-slate-100 text-[10px] text-slate-500">
                         <span className="flex items-center">
                           <Layers className="h-3 w-3 mr-1 text-slate-400" />
-                          {numContractors} Trade Vendor{numContractors !== 1 ? "s" : ""}
+                          {numContractors} Subcontractor{numContractors !== 1 ? "s" : ""}
                         </span>
                         <span className="flex items-center">
                           <Calendar className="h-3 w-3 mr-1 text-slate-400" />
@@ -575,7 +575,7 @@ export default function App() {
                         </div>
                       </div>
                       <p className="text-[11px] text-slate-500 mt-0.5">
-                        Setup risk thresholds and direct subcontractor insurance audits below.
+                        Review each subcontractor's certificate against the project requirements.
                       </p>
                     </div>
                   </div>
@@ -616,139 +616,8 @@ export default function App() {
                 {/* 2. Side-by-Side configuration panel vs Enrolled subcontractors table */}
                 <div id="threshold-and-vendor-grid" className="grid grid-cols-1 md:grid-cols-12 gap-5">
                   
-                  {/* Left segment - Thresholds parameters card */}
-                  <div id="active-thresholds-panel" className="col-span-1 md:col-span-3 bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-3.5 max-h-[80vh] overflow-y-auto">
-                    <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
-                      <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider flex items-center">
-                        <Sliders className="h-3 w-3 mr-1 text-slate-400" /> Required COI Minimums
-                      </span>
-                    </div>
-
-                    <div className="space-y-2.5 text-[11px]">
-                      {/* General Liability */}
-                      <div className="space-y-1.5">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">General Liability</span>
-                        <div className="pl-1.5 border-l border-slate-200 space-y-1.5">
-                          <div>
-                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
-                              Each Occurrence Limit
-                            </span>
-                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
-                              {formatUSD(selectedProject.requirements.gl_occurrence)}
-                            </strong>
-                          </div>
-                          <div>
-                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
-                              General Aggregate Limit
-                            </span>
-                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
-                              {formatUSD(selectedProject.requirements.gl_aggregate)}
-                            </strong>
-                          </div>
-                          <div>
-                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
-                              Products / Completed Ops
-                            </span>
-                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
-                              {formatUSD(selectedProject.requirements.gl_products_completed ?? 0)}
-                            </strong>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Auto & Umbrella */}
-                      <div className="space-y-1.5 pt-1 border-t border-slate-100">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Auto & Excess</span>
-                        <div className="pl-1.5 border-l border-slate-200 space-y-1.5">
-                          <div>
-                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
-                              Automobile Combined Single
-                            </span>
-                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
-                              {formatUSD(selectedProject.requirements.auto_limit)}
-                            </strong>
-                          </div>
-                          <div>
-                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
-                              Umbrella / Excess Limit
-                            </span>
-                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
-                              {formatUSD(selectedProject.requirements.umbrella_limit ?? 0)}
-                            </strong>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Employers Liability */}
-                      <div className="space-y-1.5 pt-1 border-t border-slate-100">
-                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Employers Liability</span>
-                        <div className="pl-1.5 border-l border-slate-200 space-y-1.5">
-                          <div>
-                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
-                              E.L. Each Accident
-                            </span>
-                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
-                              {formatUSD(selectedProject.requirements.employers_liability_accident ?? 0)}
-                            </strong>
-                          </div>
-                          <div>
-                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
-                              E.L. Disease - Each Employee
-                            </span>
-                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
-                              {formatUSD(selectedProject.requirements.employers_liability_disease_person ?? 0)}
-                            </strong>
-                          </div>
-                          <div>
-                            <span className="text-[9px] text-slate-500 block uppercase font-medium">
-                              E.L. Disease - Policy Limit
-                            </span>
-                            <strong className="text-slate-800 font-mono text-xs tracking-tight tabular-nums">
-                              {formatUSD(selectedProject.requirements.employers_liability_disease_limit ?? 0)}
-                            </strong>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Workers Comp & Buffer */}
-                      <div className="space-y-1.5 pt-1.5 border-t border-slate-100 text-[11px]">
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-500">Workers Comp:</span>
-                          <strong className="text-slate-800 font-semibold uppercase tracking-wide text-[10px]">
-                            {selectedProject.requirements.workers_comp ? "Statutory" : "Excluded"}
-                          </strong>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-500">Grace Buffer:</span>
-                          <strong className="text-slate-800 text-[10px]">
-                            {selectedProject.requirements.warn_days_out} Days
-                          </strong>
-                        </div>
-                      </div>
-
-                      {/* Custom Requirements */}
-                      {selectedProject.custom_requirements && selectedProject.custom_requirements.length > 0 && (
-                        <div className="space-y-1.5 pt-2 border-t border-slate-200">
-                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Custom Coverage</span>
-                          <div className="pl-1.5 border-l border-blue-200 space-y-1.5">
-                            {selectedProject.custom_requirements.map((custom) => (
-                              <div key={custom.id}>
-                                <span className="text-[9px] text-slate-500 block uppercase font-semibold">
-                                  {custom.label}
-                                </span>
-                                <strong className="text-blue-800 font-mono text-xs tracking-tight tabular-nums">
-                                  {formatUSD(custom.limit)}
-                                </strong>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Right segment - Subcontractors assigned tabular view */}
-                  <div id="enrolled-vendor-table-container" className="col-span-1 md:col-span-9 overflow-x-auto border border-slate-200 rounded-lg bg-white">
+                  {/* Subcontractor compliance table (full width) — insurance requirements are edited via the pencil in the header */}
+                  <div id="enrolled-vendor-table-container" className="col-span-1 md:col-span-12 overflow-x-auto border border-slate-200 rounded-lg bg-white">
                     <table id="subcontractors-table" className="w-full text-left border-collapse table-auto">
                       <thead>
                         <tr className="border-b border-slate-200 text-[10px] text-slate-500 font-semibold uppercase tracking-wider bg-slate-50/75">
@@ -962,34 +831,6 @@ export default function App() {
                     </table>
                   </div>
                 </div>
-
-                {/* 3. Drag and drop file picker triggered conditionally when subcontractor selected for upload */}
-                {activeSubForUpload && (
-                  <div id="subcontractor-active-uploader-card" className="border border-slate-200 rounded-lg p-1 bg-white animate-in slide-in-from-bottom duration-200 shadow-xs">
-                    <div className="flex items-center justify-between p-2 px-3 border-b border-slate-100 bg-slate-50 rounded-t-md">
-                      <p className="text-xs text-slate-600">
-                        Analyzing policy credentials for:{" "}
-                        <strong className="text-slate-800 font-bold">{activeSubForUpload.company_name}</strong>
-                      </p>
-                      <button
-                        onClick={() => setActiveSubForUpload(null)}
-                        className="text-[10px] text-slate-505 hover:text-slate-900 cursor-pointer underline font-semibold"
-                      >
-                        Dismiss
-                      </button>
-                    </div>
-                    <div className="p-3">
-                      <CoiUploadZone
-                        onScanStart={() => {
-                          setIsScanningActive(true);
-                        }}
-                        onScanComplete={handleScanFinished}
-                        customRequirements={selectedProject?.custom_requirements}
-                        additionalInsuredNames={selectedProject?.additional_insured_names}
-                      />
-                    </div>
-                  </div>
-                )}
               </div>
             ) : (
               // Default view showing notifications and global uploader overview
@@ -1015,16 +856,16 @@ export default function App() {
                     </button>
                     <div className="space-y-3.5">
                       <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider inline-block">
-                        Enterprise Compliance
+                        Overview
                       </span>
                       <h2 id="welcome-title" className="text-base font-bold text-slate-900 tracking-tight font-display pr-6">
-                        Zero-Trust Construction Compliance Audits
+                        Certificate of insurance compliance
                       </h2>
                       <p className="text-xs text-slate-550 leading-relaxed font-sans">
-                        ShieldCOI mitigates downstream construction litigation by continuously auditing subcontractor Certificates of Insurance (ACORD 25 templates). 
+                        Shield COI checks each subcontractor's certificate of insurance (ACORD 25) against your project's requirements — coverage limits, additional insured, and expiration.
                       </p>
                       <p className="text-xs text-slate-600 leading-relaxed font-semibold bg-blue-50/50 p-3 rounded-lg border border-blue-100">
-                        Select any active project from the list directory to run verification audits, configure policy aggregate minimums, or manually override limits via justified exceptions.
+                        Pick a project to review its subcontractors, or open Home to see everything that needs attention across all projects.
                       </p>
                     </div>
 
@@ -1078,6 +919,42 @@ export default function App() {
         projectName={selectedProject?.name || ""}
         onAdd={handleAddSubcontractor}
       />
+
+      {/* COI upload drawer — opens per subcontractor; hands off to the verify drawer once scanned. Re-uploadable anytime. */}
+      {selectedProject && activeSubForUpload && !scannedPayload && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex justify-end select-none">
+          <div className="w-full max-w-md bg-white border-l border-slate-200 h-full flex flex-col shadow-2xl animate-in slide-in-from-right duration-200">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-start justify-between gap-3">
+              <div>
+                <span className="text-[9px] bg-blue-50 text-blue-700 border border-blue-200 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                  Upload COI
+                </span>
+                <h2 className="text-xs font-bold text-slate-900 tracking-tight font-display mt-1.5 uppercase">
+                  {activeSubForUpload.company_name}
+                </h2>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Drop a certificate to scan and verify. Re-upload a renewal here anytime.
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveSubForUpload(null)}
+                className="p-1 rounded border border-slate-200 hover:bg-slate-100 text-slate-500 hover:text-slate-950 transition-colors cursor-pointer shrink-0"
+                aria-label="Close upload drawer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4 flex-1 overflow-y-auto">
+              <CoiUploadZone
+                onScanStart={() => setIsScanningActive(true)}
+                onScanComplete={handleScanFinished}
+                customRequirements={selectedProject?.custom_requirements}
+                additionalInsuredNames={selectedProject?.additional_insured_names}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Split-screen sidebar compliance reviewer drawer */}
       <VerificationDrawer

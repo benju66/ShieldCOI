@@ -49,7 +49,7 @@ export default function DashboardStats({ projects, subcontractors }: DashboardSt
           <p className="text-2xl font-display font-bold text-slate-900 tracking-tight">
             {totalSubs}
           </p>
-          <span className="text-[10px] text-slate-400 block font-medium">Registered trade vendors</span>
+          <span className="text-[10px] text-slate-400 block font-medium">Across all projects</span>
         </div>
         <div className="h-8 w-8 rounded bg-indigo-50 flex items-center justify-center border border-indigo-100">
           <CheckCircle2 className="h-4.5 w-4.5 text-indigo-600" />

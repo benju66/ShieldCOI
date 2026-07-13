@@ -288,7 +288,7 @@ export default function VerificationDrawer({
         <div id="verification-header" className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <div>
             <span className="text-[9px] bg-blue-50 text-blue-700 border border-blue-200 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
-              Verification Compliance Matrix
+              Certificate review
             </span>
             <h2 id="verification-title" className="text-xs font-bold text-slate-900 tracking-tight font-display mt-1.5 uppercase">
               Reviewing COI: {subContractorName} {isManualMode && "(Manual entry)"}
