@@ -42,6 +42,11 @@ const STATUS_SEVERITY: Record<ComplianceStatus, number> = {
   Compliant: 0,
 };
 
+/** Numeric attention weight for a status (higher = needs more attention). */
+export function statusSeverity(status: ComplianceStatus): number {
+  return STATUS_SEVERITY[status] ?? 0;
+}
+
 const CORP_SUFFIXES = /\b(llc|inc|incorporated|corp|corporation|company|co|ltd|limited|lp|llp|plc)\b/g;
 
 /**

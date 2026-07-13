@@ -1,8 +1,20 @@
 import { useMemo, useState } from "react";
-import { Building2, ChevronRight, Search, Layers, ArrowRight } from "lucide-react";
+import { Building2, ChevronRight, ChevronUp, ChevronDown, Search, Layers, ArrowRight } from "lucide-react";
 import { Project, Subcontractor, CoiRecord } from "../types";
-import { buildVendorSummaries, ComplianceStatus } from "../vendors";
+import { buildVendorSummaries, statusSeverity, ComplianceStatus } from "../vendors";
 import { formatUSD } from "../utils/currency";
+
+type SortKey = "attention" | "name" | "projects";
+
+/** Ascending comparator per column; the toolbar flips direction as needed. */
+const SORT_COMPARE: Record<SortKey, (a: { name: string; worstStatus: ComplianceStatus; projectCount: number }, b: { name: string; worstStatus: ComplianceStatus; projectCount: number }) => number> = {
+  attention: (a, b) => statusSeverity(a.worstStatus) - statusSeverity(b.worstStatus),
+  name: (a, b) => a.name.localeCompare(b.name),
+  projects: (a, b) => a.projectCount - b.projectCount,
+};
+
+// Natural default direction when a sort is first selected (false = descending).
+const SORT_DEFAULT_ASC: Record<SortKey, boolean> = { attention: false, name: true, projects: false };
 
 interface VendorsViewProps {
   projects: Project[];
@@ -41,6 +53,8 @@ function expirationClass(exp: string | null, evalDate: string): string {
 export default function VendorsView({ projects, subcontractors, coiMap, evalDate, onOpenProject }: VendorsViewProps) {
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [sortKey, setSortKey] = useState<SortKey>("attention");
+  const [sortAsc, setSortAsc] = useState(SORT_DEFAULT_ASC.attention);
 
   const summaries = useMemo(
     () => buildVendorSummaries(subcontractors, projects, coiMap),
@@ -51,6 +65,21 @@ export default function VendorsView({ projects, subcontractors, coiMap, evalDate
     const q = query.trim().toLowerCase();
     return q ? summaries.filter((v) => v.name.toLowerCase().includes(q)) : summaries;
   }, [summaries, query]);
+
+  const sorted = useMemo(() => {
+    const dir = sortAsc ? 1 : -1;
+    return [...filtered].sort(
+      (a, b) => SORT_COMPARE[sortKey](a, b) * dir || a.name.localeCompare(b.name)
+    );
+  }, [filtered, sortKey, sortAsc]);
+
+  const chooseSort = (key: SortKey) => {
+    if (key === sortKey) setSortAsc((prev) => !prev);
+    else {
+      setSortKey(key);
+      setSortAsc(SORT_DEFAULT_ASC[key]);
+    }
+  };
 
   const multiProjectCount = summaries.filter((v) => v.projectCount > 1).length;
 
@@ -85,14 +114,39 @@ export default function VendorsView({ projects, subcontractors, coiMap, evalDate
         </div>
       </div>
 
+      {/* Sort toolbar */}
+      <div className="flex items-center gap-1.5 px-4 py-2 border-b border-slate-100 bg-slate-50/40">
+        <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wide mr-0.5">Sort</span>
+        {([
+          { key: "attention", label: "Attention" },
+          { key: "name", label: "Name" },
+          { key: "projects", label: "Projects" },
+        ] as const).map((s) => {
+          const active = sortKey === s.key;
+          return (
+            <button
+              key={s.key}
+              type="button"
+              onClick={() => chooseSort(s.key)}
+              className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-colors cursor-pointer ${
+                active ? "bg-slate-800 text-white border-slate-800" : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+              }`}
+            >
+              {s.label}
+              {active && (sortAsc ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
+            </button>
+          );
+        })}
+      </div>
+
       {/* List */}
       <div className="divide-y divide-slate-100">
-        {filtered.length === 0 ? (
+        {sorted.length === 0 ? (
           <div className="text-center py-12 text-slate-400 text-xs">
             {summaries.length === 0 ? "No vendors enrolled yet." : "No vendors match your search."}
           </div>
         ) : (
-          filtered.map((vendor) => {
+          sorted.map((vendor) => {
             const isOpen = expanded.has(vendor.key);
             return (
               <div key={vendor.key} className="px-4">

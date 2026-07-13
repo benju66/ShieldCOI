@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { vendorKey, buildVendorSummaries } from "./vendors";
+import { vendorKey, buildVendorSummaries, statusSeverity } from "./vendors";
 import { Project, Subcontractor, CoiRecord } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -86,6 +86,19 @@ describe("vendorKey", () => {
   it("returns empty string for blank input", () => {
     expect(vendorKey("")).toBe("");
     expect(vendorKey("   ")).toBe("");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// statusSeverity
+// ---------------------------------------------------------------------------
+
+describe("statusSeverity", () => {
+  it("ranks statuses from most to least attention-worthy", () => {
+    expect(statusSeverity("Expired")).toBeGreaterThan(statusSeverity("Insufficient Coverage"));
+    expect(statusSeverity("Insufficient Coverage")).toBeGreaterThan(statusSeverity("Pending Upload"));
+    expect(statusSeverity("Pending Upload")).toBeGreaterThan(statusSeverity("Approved Exception"));
+    expect(statusSeverity("Approved Exception")).toBeGreaterThan(statusSeverity("Compliant"));
   });
 });
 
