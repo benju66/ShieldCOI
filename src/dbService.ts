@@ -243,7 +243,8 @@ export async function submitCoiRecord(
       gl_addl_insd: coiData.gl_addl_insd_extracted,
     },
     trade,
-    getEvaluationDate()
+    getEvaluationDate(),
+    getSettings().trade_rules
   );
 
   const newCoi: CoiRecord = {

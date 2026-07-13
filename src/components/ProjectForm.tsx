@@ -25,6 +25,8 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
   const [elAccident, setElAccident] = useState(1000000);
   const [elDiseasePerson, setElDiseasePerson] = useState(1000000);
   const [elDiseaseLimit, setElDiseaseLimit] = useState(1000000);
+  const [professionalBaseline, setProfessionalBaseline] = useState(0);
+  const [pollutionBaseline, setPollutionBaseline] = useState(0);
   const [saving, setSaving] = useState(false);
   const [customRequirements, setCustomRequirements] = useState<{ id: string; label: string; limit: number }[]>([]);
   const [additionalInsuredRequired, setAdditionalInsuredRequired] = useState(false);
@@ -51,6 +53,8 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
         setElAccident(projectToEdit.requirements?.employers_liability_accident ?? 1000000);
         setElDiseasePerson(projectToEdit.requirements?.employers_liability_disease_person ?? 1000000);
         setElDiseaseLimit(projectToEdit.requirements?.employers_liability_disease_limit ?? 1000000);
+        setProfessionalBaseline(projectToEdit.requirements?.professional_liability ?? 0);
+        setPollutionBaseline(projectToEdit.requirements?.pollution_liability ?? 0);
         setCustomRequirements(projectToEdit.custom_requirements || []);
         setAdditionalInsuredRequired(projectToEdit.additional_insured_required ?? false);
         setAdditionalInsuredNames(projectToEdit.additional_insured_names || []);
@@ -72,6 +76,8 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
         setElAccident(1000000);
         setElDiseasePerson(1000000);
         setElDiseaseLimit(1000000);
+        setProfessionalBaseline(0);
+        setPollutionBaseline(0);
         setCustomRequirements([]);
         setAdditionalInsuredRequired(false);
         setAdditionalInsuredNames([]);
@@ -251,6 +257,8 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
           employers_liability_accident: Number(elAccident),
           employers_liability_disease_person: Number(elDiseasePerson),
           employers_liability_disease_limit: Number(elDiseaseLimit),
+          professional_liability: Number(professionalBaseline),
+          pollution_liability: Number(pollutionBaseline),
         },
         custom_requirements: customRequirements,
         additional_insured_required: additionalInsuredRequired,
@@ -552,6 +560,34 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
                   required
                   value={elDiseaseLimit}
                   onChange={(v) => setElDiseaseLimit(v ?? 0)}
+                  className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
+                />
+              </div>
+
+              {/* Professional Liability baseline (optional) */}
+              <div>
+                <label htmlFor="professional-liability-baseline" className="block text-[10px] font-bold text-slate-600 mb-1">
+                  Professional Liability: Minimum ($) — leave blank if not required
+                </label>
+                <CurrencyInput
+                  id="professional-liability-baseline"
+                  value={professionalBaseline}
+                  onChange={(v) => setProfessionalBaseline(v ?? 0)}
+                  placeholder="Not required"
+                  className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
+                />
+              </div>
+
+              {/* Pollution Liability baseline (optional) */}
+              <div>
+                <label htmlFor="pollution-liability-baseline" className="block text-[10px] font-bold text-slate-600 mb-1">
+                  Pollution Liability: Minimum ($) — leave blank if not required
+                </label>
+                <CurrencyInput
+                  id="pollution-liability-baseline"
+                  value={pollutionBaseline}
+                  onChange={(v) => setPollutionBaseline(v ?? 0)}
+                  placeholder="Not required"
                   className="w-full text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-805"
                 />
               </div>

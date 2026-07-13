@@ -2,15 +2,19 @@
  * Org-level application settings, persisted to localStorage alongside the record
  * collections in dbService. Kept as a single swappable module so a later Supabase
  * migration only has to touch this file (same pattern as dbService).
- *
- * Phase 1 scope: the editable Trade Scope Package list and the default email
- * templates used when creating a new project. Data-management operations
- * (export / import / reset) live in dbService since it owns the record keys.
  */
+
+import { TradeRule } from "./tradeRules";
 
 export interface AppSettings {
   /** Trade Scope Package options shown when enrolling a subcontractor. */
   trades: string[];
+  /**
+   * User-defined trade coverage rules (umbrella / professional / pollution
+   * required for specific trades, above the project baseline). Ships empty —
+   * trades without a rule are checked against the project baseline only.
+   */
+  trade_rules: Record<string, TradeRule>;
   /** Default notice templates pre-filled into new projects. */
   email_templates: {
     expired_template: string;
@@ -26,14 +30,7 @@ export interface AppSettings {
 
 const KEY_SETTINGS = "shieldcoi_settings";
 
-/**
- * The built-in Trade Scope Packages. NOTE: these names are also referenced by
- * complianceEngine.ts, which attaches trade-specific coverage rules (elevated
- * umbrella tiers, professional & pollution liability) to them by exact string
- * match. Renaming or removing a built-in trade here does NOT remove those rules
- * — a COI for a renamed/removed trade simply falls back to the project's
- * baseline checks. See TRADES_WITH_COVERAGE_RULES.
- */
+/** The built-in Trade Scope Package labels offered out of the box. */
 export const DEFAULT_TRADES: string[] = [
   "Environmental",
   "Surveying",
@@ -57,9 +54,6 @@ export const DEFAULT_TRADES: string[] = [
   "Other Trades",
 ];
 
-/** Built-in trades carry trade-specific coverage rules in the compliance engine. */
-export const TRADES_WITH_COVERAGE_RULES: ReadonlySet<string> = new Set(DEFAULT_TRADES);
-
 export const DEFAULT_EXPIRED_TEMPLATE = `Dear [Subcontractor Name],
 
 This is to notify you that your Certificate of Insurance (COI) for [Project Name] has expired or is about to expire. Please submit a renewed COI as soon as possible to ensure project compliance and avoid payment delays.
@@ -76,6 +70,7 @@ Project Management Team`;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   trades: DEFAULT_TRADES,
+  trade_rules: {},
   email_templates: {
     expired_template: DEFAULT_EXPIRED_TEMPLATE,
     insufficient_template: DEFAULT_INSUFFICIENT_TEMPLATE,
@@ -97,6 +92,8 @@ export function getSettings(): AppSettings {
         Array.isArray(parsed.trades) && parsed.trades.length > 0
           ? parsed.trades
           : [...DEFAULT_TRADES],
+      trade_rules:
+        parsed.trade_rules && typeof parsed.trade_rules === "object" ? parsed.trade_rules : {},
       email_templates: {
         expired_template: parsed.email_templates?.expired_template ?? DEFAULT_EXPIRED_TEMPLATE,
         insufficient_template:

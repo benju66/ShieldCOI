@@ -1,12 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Sliders, X, Plus, Trash2, Download, Upload, Database, RefreshCw, AlertTriangle } from "lucide-react";
+import { Sliders, X, Plus, Trash2, Download, Upload, Database, AlertTriangle } from "lucide-react";
 import {
   getSettings,
   saveSettings,
   todayISO,
-  TRADES_WITH_COVERAGE_RULES,
 } from "../settingsService";
+import { TradeRule, isNonEmptyRule } from "../tradeRules";
 import { exportAllData, importAllData, clearAllData } from "../dbService";
+import CurrencyInput from "./CurrencyInput";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -31,6 +32,8 @@ export default function SettingsModal({
 }: SettingsModalProps) {
   const [trades, setTrades] = useState<string[]>([]);
   const [newTrade, setNewTrade] = useState("");
+  const [tradeRules, setTradeRules] = useState<Record<string, TradeRule>>({});
+  const [newRuleTrade, setNewRuleTrade] = useState("");
   const [expiredTemplate, setExpiredTemplate] = useState("");
   const [insufficientTemplate, setInsufficientTemplate] = useState("");
   const [evalMode, setEvalMode] = useState<"today" | "fixed">("today");
@@ -44,11 +47,13 @@ export default function SettingsModal({
     if (isOpen) {
       const s = getSettings();
       setTrades(s.trades);
+      setTradeRules(JSON.parse(JSON.stringify(s.trade_rules || {})));
       setExpiredTemplate(s.email_templates.expired_template);
       setInsufficientTemplate(s.email_templates.insufficient_template);
       setEvalMode(s.evaluation_date ? "fixed" : "today");
       setEvalDateOverride(s.evaluation_date || todayISO());
       setNewTrade("");
+      setNewRuleTrade("");
     }
   }, [isOpen]);
 
@@ -82,15 +87,37 @@ export default function SettingsModal({
         `${inUseCount} enrolled subcontractor${inUseCount !== 1 ? "s are" : " is"} assigned "${name}". They keep the label, but it will no longer be selectable for new vendors.`
       );
     }
-    if (TRADES_WITH_COVERAGE_RULES.has(name)) {
-      warnings.push(
-        `"${name}" is a built-in trade with specific coverage rules (umbrella / professional / pollution). Removing it means future COIs for it fall back to your project's baseline checks only.`
-      );
+    if (isNonEmptyRule(tradeRules[name])) {
+      warnings.push(`Its coverage rule will also be deleted.`);
     }
     if (warnings.length > 0 && !window.confirm(`Remove "${name}"?\n\n${warnings.join("\n\n")}`)) {
       return;
     }
     setTrades(trades.filter((_, i) => i !== index));
+    if (tradeRules[name]) {
+      const next = { ...tradeRules };
+      delete next[name];
+      setTradeRules(next);
+    }
+  };
+
+  // --- Trade coverage rules ---
+  const setRuleField = (trade: string, field: keyof TradeRule, value: number) => {
+    setTradeRules({ ...tradeRules, [trade]: { ...tradeRules[trade], [field]: value } });
+  };
+
+  const addRule = () => {
+    if (!newRuleTrade) return;
+    if (!tradeRules[newRuleTrade]) {
+      setTradeRules({ ...tradeRules, [newRuleTrade]: {} });
+    }
+    setNewRuleTrade("");
+  };
+
+  const removeRule = (trade: string) => {
+    const next = { ...tradeRules };
+    delete next[trade];
+    setTradeRules(next);
   };
 
   const handleSave = () => {
@@ -109,9 +136,22 @@ export default function SettingsModal({
       alert("Keep at least one Trade Scope Package.");
       return;
     }
+    // Keep only non-empty rules for trades that still exist.
+    const cleanedTradeSet = new Set(cleaned);
+    const cleanedRules: Record<string, TradeRule> = {};
+    for (const t of Object.keys(tradeRules)) {
+      const rule: TradeRule | undefined = tradeRules[t];
+      if (!rule || !cleanedTradeSet.has(t) || !isNonEmptyRule(rule)) continue;
+      cleanedRules[t] = {
+        umbrella: rule.umbrella || undefined,
+        professionalLiability: rule.professionalLiability || undefined,
+        pollutionLiability: rule.pollutionLiability || undefined,
+      };
+    }
     setSaving(true);
     saveSettings({
       trades: cleaned,
+      trade_rules: cleanedRules,
       email_templates: {
         expired_template: expiredTemplate,
         insufficient_template: insufficientTemplate,
@@ -158,6 +198,7 @@ export default function SettingsModal({
       // Re-hydrate editing state from the imported settings.
       const s = getSettings();
       setTrades(s.trades);
+      setTradeRules(JSON.parse(JSON.stringify(s.trade_rules || {})));
       setExpiredTemplate(s.email_templates.expired_template);
       setInsufficientTemplate(s.email_templates.insufficient_template);
       await onDataReloaded();
@@ -235,7 +276,7 @@ export default function SettingsModal({
 
             <div className="space-y-1.5">
               {trades.map((t, index) => {
-                const hasRules = TRADES_WITH_COVERAGE_RULES.has(t);
+                const hasRules = isNonEmptyRule(tradeRules[t]);
                 const inUse = usedSet.has(t);
                 return (
                   <div key={index} className="flex items-center gap-2">
@@ -247,10 +288,10 @@ export default function SettingsModal({
                     />
                     {hasRules && (
                       <span
-                        title="Built-in trade with specific coverage rules in the compliance engine."
+                        title="Has a coverage rule configured (see Trade coverage rules below)."
                         className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 cursor-help shrink-0"
                       >
-                        Rules
+                        Rule
                       </span>
                     )}
                     {inUse && (
@@ -302,10 +343,109 @@ export default function SettingsModal({
             <p className="text-[9.5px] text-slate-500 leading-normal flex items-start gap-1">
               <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" />
               <span>
-                Custom trades are checked against each project's baseline limits only — the trade-specific
-                umbrella, professional, and pollution rules apply to the built-in "Rules" trades.
+                Every trade is checked against the project's baseline limits. Add a coverage rule below to
+                require extra insurance for a specific trade (e.g. an "Electrical – Design Build" trade that
+                needs professional liability).
               </span>
             </p>
+          </section>
+
+          {/* Trade coverage rules */}
+          <section className="space-y-2.5 border-t border-slate-200 pt-5">
+            <div>
+              <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider block">
+                Trade coverage rules
+              </span>
+              <p className="text-[10px] text-slate-500 mt-0.5">
+                Extra coverage required for specific trades, above the project baseline. Trades without a rule
+                use the project baseline only. A rule can only raise a requirement, never lower it.
+              </p>
+            </div>
+
+            {Object.keys(tradeRules).length === 0 ? (
+              <p className="text-[10px] text-slate-400 italic py-1">No trade rules — every trade uses the project baseline.</p>
+            ) : (
+              <div className="space-y-2.5">
+                {Object.keys(tradeRules).map((t) => {
+                  const rule = tradeRules[t];
+                  const stillListed = trades.includes(t);
+                  return (
+                    <div key={t} className="border border-slate-200 rounded-lg p-2.5 bg-slate-50/40 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[11px] font-bold ${stillListed ? "text-slate-800" : "text-red-600"}`}>
+                          {t}
+                          {!stillListed && <span className="ml-1 text-[9px] font-normal">(trade removed)</span>}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeRule(t)}
+                          title={`Remove rule for "${t}"`}
+                          className="p-1 rounded cursor-pointer hover:bg-red-50 text-slate-400 hover:text-red-600 border border-transparent hover:border-red-200 transition-all shrink-0"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 mb-0.5">Umbrella</label>
+                          <CurrencyInput
+                            value={rule.umbrella ?? 0}
+                            onChange={(v) => setRuleField(t, "umbrella", v ?? 0)}
+                            placeholder="—"
+                            className="w-full text-[11px] font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1 text-slate-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 mb-0.5">Professional</label>
+                          <CurrencyInput
+                            value={rule.professionalLiability ?? 0}
+                            onChange={(v) => setRuleField(t, "professionalLiability", v ?? 0)}
+                            placeholder="—"
+                            className="w-full text-[11px] font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1 text-slate-800"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 mb-0.5">Pollution</label>
+                          <CurrencyInput
+                            value={rule.pollutionLiability ?? 0}
+                            onChange={(v) => setRuleField(t, "pollutionLiability", v ?? 0)}
+                            placeholder="—"
+                            className="w-full text-[11px] font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1 text-slate-800"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Add a rule */}
+            <div className="flex items-center gap-2 pt-1">
+              <select
+                value={newRuleTrade}
+                onChange={(e) => setNewRuleTrade(e.target.value)}
+                className="flex-1 text-xs bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-800 cursor-pointer"
+              >
+                <option value="">Add a rule for…</option>
+                {trades
+                  .filter((t) => !tradeRules[t])
+                  .map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+              </select>
+              <button
+                type="button"
+                onClick={addRule}
+                disabled={!newRuleTrade}
+                className="flex items-center space-x-1 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded text-[10px] font-bold cursor-pointer transition-colors shrink-0 disabled:opacity-40"
+              >
+                <Plus className="h-3 w-3" />
+                <span>Add rule</span>
+              </button>
+            </div>
           </section>
 
           {/* Default Email Templates */}

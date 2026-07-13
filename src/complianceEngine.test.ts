@@ -20,6 +20,8 @@ const DEFAULT_REQS: ProjectRequirements = {
   employers_liability_accident: 1_000_000,
   employers_liability_disease_person: 1_000_000,
   employers_liability_disease_limit: 1_000_000,
+  professional_liability: 0,
+  pollution_liability: 0,
 };
 
 function makeProject(
@@ -161,105 +163,88 @@ describe("verifyCompliance — employers' liability", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Trade-based umbrella matrix
+// Umbrella (project baseline, raised by trade rules)
 // ---------------------------------------------------------------------------
 
-describe("verifyCompliance — umbrella matrix by trade", () => {
-  it("requires $10M for high-hazard trades (Elevators)", () => {
-    const under = verifyCompliance(makeProject(), makeCoi({ umbrella_limit: 5_000_000 }), "Elevators", NOW);
+describe("verifyCompliance — umbrella", () => {
+  it("checks against the project baseline when the trade has no rule", () => {
+    const project = makeProject({ requirements: { umbrella_limit: 2_000_000 } });
+    const under = verifyCompliance(project, makeCoi({ umbrella_limit: 1_000_000 }), "Electrical", NOW);
     expect(hasError(under.errors, "Umbrella")).toBe(true);
 
-    const ok = verifyCompliance(makeProject(), makeCoi({ umbrella_limit: 10_000_000 }), "Elevators", NOW);
+    const ok = verifyCompliance(project, makeCoi({ umbrella_limit: 2_000_000 }), "Electrical", NOW);
     expect(hasError(ok.errors, "Umbrella")).toBe(false);
   });
 
-  it("requires $5M for mid-tier trades (Electrical)", () => {
-    const under = verifyCompliance(makeProject(), makeCoi({ umbrella_limit: 1_000_000 }), "Electrical", NOW);
+  it("raises the umbrella requirement for a trade with a rule", () => {
+    const rules = { Electrical: { umbrella: 5_000_000 } };
+    const under = verifyCompliance(makeProject(), makeCoi({ umbrella_limit: 1_000_000 }), "Electrical", NOW, rules);
     expect(hasError(under.errors, "Umbrella")).toBe(true);
 
-    const ok = verifyCompliance(makeProject(), makeCoi({ umbrella_limit: 5_000_000 }), "Electrical", NOW);
+    const ok = verifyCompliance(makeProject(), makeCoi({ umbrella_limit: 5_000_000 }), "Electrical", NOW, rules);
     expect(hasError(ok.errors, "Umbrella")).toBe(false);
   });
 
-  it("requires $1M for low-tier trades (Other Trades)", () => {
-    const under = verifyCompliance(makeProject(), makeCoi({ umbrella_limit: 500_000 }), "Other Trades", NOW);
-    expect(hasError(under.errors, "Umbrella")).toBe(true);
-
-    const ok = verifyCompliance(makeProject(), makeCoi({ umbrella_limit: 1_000_000 }), "Other Trades", NOW);
-    expect(hasError(ok.errors, "Umbrella")).toBe(false);
-  });
-
-  it("falls back to the project's umbrella requirement for an unrecognized trade", () => {
-    const project = makeProject({ requirements: { umbrella_limit: 3_000_000 } });
-    const under = verifyCompliance(project, makeCoi({ umbrella_limit: 2_000_000 }), "Glazing", NOW);
-    expect(hasError(under.errors, "Umbrella")).toBe(true);
-
-    const ok = verifyCompliance(project, makeCoi({ umbrella_limit: 3_000_000 }), "Glazing", NOW);
+  it("only applies a trade rule to that trade", () => {
+    const rules = { Elevators: { umbrella: 10_000_000 } };
+    // A different trade with no rule still uses the baseline ($1M).
+    const ok = verifyCompliance(makeProject(), makeCoi({ umbrella_limit: 1_000_000 }), "Drywall", NOW, rules);
     expect(hasError(ok.errors, "Umbrella")).toBe(false);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Trade-based professional & pollution liability
+// Professional & pollution liability (baseline + trade rules)
 // ---------------------------------------------------------------------------
 
-describe("verifyCompliance — professional liability by trade", () => {
-  it("requires $2M professional liability for professional trades (Plumbing)", () => {
-    const under = verifyCompliance(
-      makeProject(),
-      makeCoi({ professional_liability: 0, umbrella_limit: 5_000_000 }),
-      "Plumbing",
-      NOW
-    );
-    expect(hasError(under.errors, "Professional Liability")).toBe(true);
-
-    const ok = verifyCompliance(
-      makeProject(),
-      makeCoi({ professional_liability: 2_000_000, umbrella_limit: 5_000_000 }),
-      "Plumbing",
-      NOW
-    );
-    expect(hasError(ok.errors, "Professional Liability")).toBe(false);
-  });
-
-  it("does not require professional liability for non-professional trades", () => {
-    const result = verifyCompliance(makeProject(), makeCoi({ professional_liability: 0 }), "Other Trades", NOW);
+describe("verifyCompliance — professional liability", () => {
+  it("is not required by default (no baseline, no rule)", () => {
+    const result = verifyCompliance(makeProject(), makeCoi({ professional_liability: 0 }), "Electrical", NOW);
     expect(hasError(result.errors, "Professional Liability")).toBe(false);
   });
 
-  it("treats a missing professional value as 0 for a professional trade", () => {
-    const result = verifyCompliance(
-      makeProject(),
-      makeCoi({ professional_liability: undefined, umbrella_limit: 5_000_000 }),
-      "Plumbing",
-      NOW
-    );
-    expect(hasError(result.errors, "Professional Liability")).toBe(true);
+  it("is required for everyone when the project sets a baseline", () => {
+    const project = makeProject({ requirements: { professional_liability: 2_000_000 } });
+    const under = verifyCompliance(project, makeCoi({ professional_liability: 1_000_000 }), "Other Trades", NOW);
+    expect(hasError(under.errors, "Professional Liability")).toBe(true);
+
+    const ok = verifyCompliance(project, makeCoi({ professional_liability: 2_000_000 }), "Other Trades", NOW);
+    expect(hasError(ok.errors, "Professional Liability")).toBe(false);
+  });
+
+  it("can be required for a single trade via a rule (e.g. a design-build trade)", () => {
+    const rules = { "Electrical - Design Build": { professionalLiability: 2_000_000 } };
+    // Plain Electrical: no rule, no baseline → not required.
+    expect(
+      hasError(verifyCompliance(makeProject(), makeCoi({ professional_liability: 0 }), "Electrical", NOW, rules).errors, "Professional Liability")
+    ).toBe(false);
+    // Design-build variant: rule requires it.
+    expect(
+      hasError(verifyCompliance(makeProject(), makeCoi({ professional_liability: 0 }), "Electrical - Design Build", NOW, rules).errors, "Professional Liability")
+    ).toBe(true);
   });
 });
 
-describe("verifyCompliance — pollution liability by trade", () => {
-  it("requires $2M pollution liability for pollution trades (Roofing)", () => {
-    const under = verifyCompliance(
-      makeProject(),
-      makeCoi({ pollution_liability: 0, umbrella_limit: 5_000_000 }),
-      "Roofing",
-      NOW
-    );
-    expect(hasError(under.errors, "Pollution Liability")).toBe(true);
-
-    const ok = verifyCompliance(
-      makeProject(),
-      makeCoi({ pollution_liability: 2_000_000, umbrella_limit: 5_000_000 }),
-      "Roofing",
-      NOW
-    );
-    expect(hasError(ok.errors, "Pollution Liability")).toBe(false);
+describe("verifyCompliance — pollution liability", () => {
+  it("is not required by default", () => {
+    const result = verifyCompliance(makeProject(), makeCoi({ pollution_liability: 0 }), "Roofing", NOW);
+    expect(hasError(result.errors, "Pollution Liability")).toBe(false);
   });
 
-  it("does not require pollution liability for non-pollution trades", () => {
-    const result = verifyCompliance(makeProject(), makeCoi({ pollution_liability: 0 }), "Other Trades", NOW);
-    expect(hasError(result.errors, "Pollution Liability")).toBe(false);
+  it("is required when the project sets a baseline, and a trade rule can raise it", () => {
+    const project = makeProject({ requirements: { pollution_liability: 1_000_000 } });
+    const rules = { Roofing: { pollutionLiability: 2_000_000 } };
+    // Baseline applies to a trade with no rule.
+    expect(
+      hasError(verifyCompliance(project, makeCoi({ pollution_liability: 500_000 }), "Drywall", NOW).errors, "Pollution Liability")
+    ).toBe(true);
+    // Roofing rule raises it to $2M.
+    expect(
+      hasError(verifyCompliance(project, makeCoi({ pollution_liability: 1_500_000 }), "Roofing", NOW, rules).errors, "Pollution Liability")
+    ).toBe(true);
+    expect(
+      hasError(verifyCompliance(project, makeCoi({ pollution_liability: 2_000_000 }), "Roofing", NOW, rules).errors, "Pollution Liability")
+    ).toBe(false);
   });
 });
 

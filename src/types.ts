@@ -9,6 +9,10 @@ export interface ProjectRequirements {
   employers_liability_accident: number;
   employers_liability_disease_person: number;
   employers_liability_disease_limit: number;
+  // Project baselines for professional & pollution liability (0/absent = not
+  // required for everyone). Trade rules can raise these for specific trades.
+  professional_liability?: number;
+  pollution_liability?: number;
 }
 
 export interface Project {

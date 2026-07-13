@@ -1,4 +1,5 @@
 import { Project } from "./types";
+import { resolveRequiredCoverage, TradeRule } from "./tradeRules";
 
 /**
  * Normalizes an entity name for fuzzy comparison — drops punctuation, common
@@ -53,11 +54,13 @@ export function verifyCompliance(
     gl_addl_insd?: boolean;
   },
   subcontractorTrade: string = "Other Trades",
-  currentDateStr: string
+  currentDateStr: string,
+  tradeRules: Record<string, TradeRule> = {}
 ): { status: "Compliant" | "Insufficient Coverage" | "Expired" | "Pending Upload"; errors: string[] } {
   const errors: string[] = [];
   const req = project.requirements;
   const trade = (subcontractorTrade || "Other Trades").trim();
+  const required = resolveRequiredCoverage(req, trade, tradeRules);
 
   // 1. General Liability - Each Occurrence Limit ($)
   if (coi.gl_each_occurrence < req.gl_occurrence) {
@@ -94,23 +97,11 @@ export function verifyCompliance(
     );
   }
 
-  // 6. Variable Excess/Umbrella Matrix Override
-  let requiredUmbrella = req.umbrella_limit ?? 1000000;
-  if (["Concrete (Precast)", "Concrete (with Crane)", "Rough Carpentry (with Crane)", "Elevators"].includes(trade)) {
-    requiredUmbrella = 10000000;
-  } else if ([
-    "Environmental", "Earthwork", "Concrete (Standard)", "Masonry", "Rough Carpentry (Standard)",
-    "Siding", "Roofing", "Windows", "Drywall", "Fire Sprinkler", "Plumbing", "HVAC", "Electrical"
-  ].includes(trade)) {
-    requiredUmbrella = 5000000;
-  } else if (["Surveying", "Pool", "Other Trades"].includes(trade)) {
-    requiredUmbrella = 1000000;
-  }
-
+  // 6. Umbrella / Excess Liability (project baseline, raised by any trade rule)
   const umbrellaLimit = coi.umbrella_limit ?? 0;
-  if (umbrellaLimit < requiredUmbrella) {
+  if (required.umbrella > 0 && umbrellaLimit < required.umbrella) {
     errors.push(
-      `Umbrella / Excess Liability: Limit ($${umbrellaLimit.toLocaleString()}) is less than the required $${requiredUmbrella.toLocaleString()} dictated by trade scope "${trade}".`
+      `Umbrella / Excess Liability: Limit ($${umbrellaLimit.toLocaleString()}) is less than the required $${required.umbrella.toLocaleString()}.`
     );
   }
 
@@ -141,27 +132,22 @@ export function verifyCompliance(
     );
   }
 
-  // 10. Professional Liability Trade Rule ($2M)
-  const professionalTrades = ["Environmental", "Surveying", "Earthwork", "Pool", "Fire Sprinkler", "Plumbing", "HVAC", "Electrical"];
-  if (professionalTrades.includes(trade)) {
+  // 10. Professional Liability (project baseline, raised by any trade rule)
+  if (required.professionalLiability > 0) {
     const professionalVal = coi.professional_liability ?? 0;
-    if (professionalVal < 2000000) {
+    if (professionalVal < required.professionalLiability) {
       errors.push(
-        `Professional Liability: Trade scope "${trade}" requires at least $2,000,000, but found $${professionalVal.toLocaleString()}.`
+        `Professional Liability: Limit ($${professionalVal.toLocaleString()}) is less than the required $${required.professionalLiability.toLocaleString()}.`
       );
     }
   }
 
-  // 11. Pollution Liability Trade Rule ($2M)
-  const pollutionTrades = [
-    "Environmental", "Earthwork", "Concrete (Precast)", "Concrete (Standard)", "Masonry",
-    "Rough Carpentry (Standard)", "Siding", "Roofing", "Windows", "Drywall", "Plumbing", "HVAC"
-  ];
-  if (pollutionTrades.includes(trade)) {
+  // 11. Pollution Liability (project baseline, raised by any trade rule)
+  if (required.pollutionLiability > 0) {
     const pollutionVal = coi.pollution_liability ?? 0;
-    if (pollutionVal < 2000000) {
+    if (pollutionVal < required.pollutionLiability) {
       errors.push(
-        `Pollution Liability: Trade scope "${trade}" requires at least $2,000,000, but found $${pollutionVal.toLocaleString()}.`
+        `Pollution Liability: Limit ($${pollutionVal.toLocaleString()}) is less than the required $${required.pollutionLiability.toLocaleString()}.`
       );
     }
   }

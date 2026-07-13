@@ -5,6 +5,8 @@ import { verifyCompliance, isNamedAdditionalInsured } from "../complianceEngine"
 import { formatUSD } from "../utils/currency";
 import DocumentViewer, { ACORD25_FIELD_TEMPLATE } from "./DocumentViewer";
 import CurrencyInput from "./CurrencyInput";
+import { resolveRequiredCoverage } from "../tradeRules";
+import { getSettings } from "../settingsService";
 
 interface VerificationDrawerProps {
   isOpen: boolean;
@@ -147,7 +149,9 @@ export default function VerificationDrawer({
   // Run compliance analysis engine Reactively
   const req = project.requirements;
   const trade = subContractorTrade || "Other Trades";
-  const analysis = verifyCompliance(project, activeData, trade, evaluationDate);
+  const tradeRules = getSettings().trade_rules;
+  const required = resolveRequiredCoverage(req, trade, tradeRules);
+  const analysis = verifyCompliance(project, activeData, trade, evaluationDate, tradeRules);
 
   // Compare each field to see if it meets threshold reactively
   const isGlOccPassed = activeData.gl_each_occurrence >= req.gl_occurrence;
@@ -157,34 +161,19 @@ export default function VerificationDrawer({
 
   const isGlProdPassed = (activeData.gl_products_completed ?? 0) >= (req.gl_products_completed ?? 2000000);
 
-  // Umbrella variable trade-specific calculation
-  let requiredUmbrella = req.umbrella_limit ?? 1000000;
-  if (["Concrete (Precast)", "Concrete (with Crane)", "Rough Carpentry (with Crane)", "Elevators"].includes(trade)) {
-    requiredUmbrella = 10000000;
-  } else if ([
-    "Environmental", "Earthwork", "Concrete (Standard)", "Masonry", "Rough Carpentry (Standard)",
-    "Siding", "Roofing", "Windows", "Drywall", "Fire Sprinkler", "Plumbing", "HVAC", "Electrical"
-  ].includes(trade)) {
-    requiredUmbrella = 5000000;
-  } else if (["Surveying", "Pool", "Other Trades"].includes(trade)) {
-    requiredUmbrella = 1000000;
-  }
+  // Umbrella: project baseline, raised by any trade rule (see tradeRules.ts)
+  const requiredUmbrella = required.umbrella;
   const isUmbrellaPassed = (activeData.umbrella_limit ?? 0) >= requiredUmbrella;
 
   const isElAccidentPassed = (activeData.employers_liability_accident ?? 0) >= (req.employers_liability_accident ?? 1000000);
   const isElDiseasePersonPassed = (activeData.employers_liability_disease_person ?? 0) >= (req.employers_liability_disease_person ?? 1000000);
   const isElDiseaseLimitPassed = (activeData.employers_liability_disease_limit ?? 0) >= (req.employers_liability_disease_limit ?? 1000000);
 
-  const professionalTrades = ["Environmental", "Surveying", "Earthwork", "Pool", "Fire Sprinkler", "Plumbing", "HVAC", "Electrical"];
-  const isProfessionalRequired = professionalTrades.includes(trade);
-  const isProfessionalPassed = (activeData.professional_liability ?? 0) >= 2000000;
+  const isProfessionalRequired = required.professionalLiability > 0;
+  const isProfessionalPassed = (activeData.professional_liability ?? 0) >= required.professionalLiability;
 
-  const pollutionTrades = [
-    "Environmental", "Earthwork", "Concrete (Precast)", "Concrete (Standard)", "Masonry",
-    "Rough Carpentry (Standard)", "Siding", "Roofing", "Windows", "Drywall", "Plumbing", "HVAC"
-  ];
-  const isPollutionRequired = pollutionTrades.includes(trade);
-  const isPollutionPassed = (activeData.pollution_liability ?? 0) >= 2000000;
+  const isPollutionRequired = required.pollutionLiability > 0;
+  const isPollutionPassed = (activeData.pollution_liability ?? 0) >= required.pollutionLiability;
 
   const isNotExpired = new Date(activeData.policy_expiration_date) > new Date(evaluationDate);
 
@@ -798,7 +787,7 @@ export default function VerificationDrawer({
                   </div>
                   <div className="col-span-3 text-right">
                     <p className="text-xs font-mono text-slate-500 tracking-tight tabular-nums">
-                      {formatUSD(2000000)}
+                      {formatUSD(required.professionalLiability)}
                     </p>
                   </div>
                   <div className="col-span-1 flex justify-center">
@@ -840,7 +829,7 @@ export default function VerificationDrawer({
                   </div>
                   <div className="col-span-3 text-right">
                     <p className="text-xs font-mono text-slate-500 tracking-tight tabular-nums">
-                      {formatUSD(2000000)}
+                      {formatUSD(required.pollutionLiability)}
                     </p>
                   </div>
                   <div className="col-span-1 flex justify-center">
