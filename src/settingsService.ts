@@ -5,8 +5,11 @@
  */
 
 import { TradeRule } from "./tradeRules";
+import { ProjectRequirements } from "./types";
 
 export interface AppSettings {
+  /** Org "house minimum" insurance requirements pre-filled into new projects. */
+  default_requirements: ProjectRequirements;
   /** Trade Scope Package options shown when enrolling a subcontractor. */
   trades: string[];
   /**
@@ -68,7 +71,24 @@ We have reviewed your Certificate of Insurance (COI) uploaded for [Project Name]
 Thank you,
 Project Management Team`;
 
+/** Built-in "house minimum" requirements for a new project. */
+export const DEFAULT_PROJECT_REQUIREMENTS: ProjectRequirements = {
+  gl_occurrence: 2_000_000,
+  gl_aggregate: 4_000_000,
+  auto_limit: 1_000_000,
+  workers_comp: true,
+  warn_days_out: 60,
+  gl_products_completed: 2_000_000,
+  umbrella_limit: 1_000_000,
+  employers_liability_accident: 1_000_000,
+  employers_liability_disease_person: 1_000_000,
+  employers_liability_disease_limit: 1_000_000,
+  professional_liability: 0,
+  pollution_liability: 0,
+};
+
 export const DEFAULT_SETTINGS: AppSettings = {
+  default_requirements: DEFAULT_PROJECT_REQUIREMENTS,
   trades: DEFAULT_TRADES,
   trade_rules: {},
   email_templates: {
@@ -88,6 +108,7 @@ export function getSettings(): AppSettings {
     if (!raw) return { ...DEFAULT_SETTINGS, email_templates: { ...DEFAULT_SETTINGS.email_templates } };
     const parsed = JSON.parse(raw) as Partial<AppSettings>;
     return {
+      default_requirements: { ...DEFAULT_PROJECT_REQUIREMENTS, ...(parsed.default_requirements || {}) },
       trades:
         Array.isArray(parsed.trades) && parsed.trades.length > 0
           ? parsed.trades

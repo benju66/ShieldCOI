@@ -6,6 +6,7 @@ import {
   todayISO,
 } from "../settingsService";
 import { TradeRule, isNonEmptyRule } from "../tradeRules";
+import { ProjectRequirements } from "../types";
 import { exportAllData, importAllData, clearAllData } from "../dbService";
 import CurrencyInput from "./CurrencyInput";
 
@@ -30,6 +31,7 @@ export default function SettingsModal({
   onResetMockData,
   onDataReloaded,
 }: SettingsModalProps) {
+  const [defaultReqs, setDefaultReqs] = useState<ProjectRequirements>(() => ({ ...getSettings().default_requirements }));
   const [trades, setTrades] = useState<string[]>([]);
   const [newTrade, setNewTrade] = useState("");
   const [tradeRules, setTradeRules] = useState<Record<string, TradeRule>>({});
@@ -46,6 +48,7 @@ export default function SettingsModal({
   useEffect(() => {
     if (isOpen) {
       const s = getSettings();
+      setDefaultReqs({ ...s.default_requirements });
       setTrades(s.trades);
       setTradeRules(JSON.parse(JSON.stringify(s.trade_rules || {})));
       setExpiredTemplate(s.email_templates.expired_template);
@@ -120,6 +123,9 @@ export default function SettingsModal({
     setTradeRules(next);
   };
 
+  const setReq = (field: keyof ProjectRequirements, value: number | boolean) =>
+    setDefaultReqs((prev) => ({ ...prev, [field]: value }));
+
   const handleSave = () => {
     // Trim, drop blanks, de-dupe (case-insensitive, keep first occurrence).
     const seen = new Set<string>();
@@ -150,6 +156,7 @@ export default function SettingsModal({
     }
     setSaving(true);
     saveSettings({
+      default_requirements: defaultReqs,
       trades: cleaned,
       trade_rules: cleanedRules,
       email_templates: {
@@ -197,6 +204,7 @@ export default function SettingsModal({
       importAllData(text);
       // Re-hydrate editing state from the imported settings.
       const s = getSettings();
+      setDefaultReqs({ ...s.default_requirements });
       setTrades(s.trades);
       setTradeRules(JSON.parse(JSON.stringify(s.trade_rules || {})));
       setExpiredTemplate(s.email_templates.expired_template);
@@ -263,8 +271,70 @@ export default function SettingsModal({
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-6">
 
-          {/* Trade Scope Packages */}
+          {/* Default project requirements */}
           <section className="space-y-2.5">
+            <div>
+              <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider block">
+                Default project requirements
+              </span>
+              <p className="text-[10px] text-slate-500 mt-0.5">
+                Your "house minimum" insurance limits, pre-filled into every new project. Existing projects keep
+                their own saved requirements.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+              {([
+                ["gl_occurrence", "GL — Each Occurrence"],
+                ["gl_aggregate", "GL — General Aggregate"],
+                ["auto_limit", "Automobile — Combined"],
+                ["gl_products_completed", "GL — Products-Completed"],
+                ["umbrella_limit", "Umbrella / Excess"],
+                ["employers_liability_accident", "Employers' Liab — Accident"],
+                ["employers_liability_disease_person", "Employers' Liab — Disease (Person)"],
+                ["employers_liability_disease_limit", "Employers' Liab — Disease (Limit)"],
+                ["professional_liability", "Professional Liab (baseline)"],
+                ["pollution_liability", "Pollution Liab (baseline)"],
+              ] as [keyof ProjectRequirements, string][]).map(([key, label]) => (
+                <div key={key}>
+                  <label className="block text-[9px] font-bold text-slate-500 mb-0.5">{label}</label>
+                  <CurrencyInput
+                    value={(defaultReqs[key] as number) ?? 0}
+                    onChange={(v) => setReq(key, v ?? 0)}
+                    placeholder="—"
+                    className="w-full text-[11px] font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1 text-slate-800"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={defaultReqs.workers_comp}
+                  onChange={(e) => setReq("workers_comp", e.target.checked)}
+                  className="cursor-pointer"
+                />
+                <span className="text-[11px] text-slate-800 font-semibold">Require Workers' Comp</span>
+              </label>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-500 font-semibold">Alert window</span>
+                <select
+                  value={defaultReqs.warn_days_out}
+                  onChange={(e) => setReq("warn_days_out", Number(e.target.value))}
+                  className="text-[11px] bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1 text-slate-800 cursor-pointer"
+                >
+                  <option value={30}>30 days</option>
+                  <option value={60}>60 days</option>
+                  <option value={90}>90 days</option>
+                </select>
+              </div>
+            </div>
+          </section>
+
+          {/* Trade Scope Packages */}
+          <section className="space-y-2.5 border-t border-slate-200 pt-5">
             <div>
               <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider block">
                 Trade Scope Packages
