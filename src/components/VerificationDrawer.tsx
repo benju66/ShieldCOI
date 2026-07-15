@@ -6,7 +6,7 @@ import { formatUSD } from "../utils/currency";
 import DocumentViewer, { ACORD25_FIELD_TEMPLATE } from "./DocumentViewer";
 import CurrencyInput from "./CurrencyInput";
 import { resolveRequiredCoverage } from "../tradeRules";
-import { getSettings } from "../settingsService";
+import { useSettings } from "../SettingsContext";
 
 interface VerificationDrawerProps {
   isOpen: boolean;
@@ -66,6 +66,7 @@ export default function VerificationDrawer({
   extractedData,
   onSave,
 }: VerificationDrawerProps) {
+  const { settings } = useSettings();
   const [override, setOverride] = useState(false);
   const [overrideNotes, setOverrideNotes] = useState("");
   const [waiverReasonType, setWaiverReasonType] = useState<"Low Contract Value" | "Low-Risk Scope" | "Executive Discretion" | "Temporary Extension" | "">("");
@@ -149,7 +150,7 @@ export default function VerificationDrawer({
   // Run compliance analysis engine Reactively
   const req = project.requirements;
   const trade = subContractorTrade || "Other Trades";
-  const tradeRules = getSettings().trade_rules;
+  const tradeRules = settings.trade_rules;
   const required = resolveRequiredCoverage(req, trade, tradeRules);
   const analysis = verifyCompliance(project, activeData, trade, evaluationDate, tradeRules);
 

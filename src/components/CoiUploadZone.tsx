@@ -1,6 +1,7 @@
 import React, { useState, useRef } from "react";
 import { Upload, FileText, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
-import { getEvaluationDate } from "../settingsService";
+import { todayISO } from "../settingsService";
+import { useSettings } from "../SettingsContext";
 
 interface CoiUploadZoneProps {
   onScanComplete: (data: {
@@ -54,6 +55,7 @@ const SAMPLE_FILES = [
 ];
 
 export default function CoiUploadZone({ onScanComplete, onScanStart, customRequirements, additionalInsuredNames }: CoiUploadZoneProps) {
+  const { settings } = useSettings();
   const [isDragOver, setIsDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingText, setLoadingText] = useState("");
@@ -68,7 +70,7 @@ export default function CoiUploadZone({ onScanComplete, onScanStart, customRequi
       gl_general_aggregate: 0,
       auto_combined_single_limit: 0,
       workers_comp_statutory: false,
-      policy_expiration_date: getEvaluationDate(), // Blank manual entry starts at "today"; user sets the real date
+      policy_expiration_date: settings.evaluation_date || todayISO(), // Blank manual entry starts at "today"; user sets the real date
       gl_products_completed: 0,
       umbrella_limit: 0,
       employers_liability_accident: 0,

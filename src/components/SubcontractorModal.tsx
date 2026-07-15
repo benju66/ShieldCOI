@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { UserPlus, X } from "lucide-react";
 import CurrencyInput from "./CurrencyInput";
-import { getSettings } from "../settingsService";
+import { useSettings } from "../SettingsContext";
 
 interface SubcontractorModalProps {
   isOpen: boolean;
@@ -11,6 +11,7 @@ interface SubcontractorModalProps {
 }
 
 export default function SubcontractorModal({ isOpen, onClose, projectName, onAdd }: SubcontractorModalProps) {
+  const { settings } = useSettings();
   const [companyName, setCompanyName] = useState("");
   const [trades, setTrades] = useState<string[]>([]);
   const [trade, setTrade] = useState("");
@@ -21,7 +22,7 @@ export default function SubcontractorModal({ isOpen, onClose, projectName, onAdd
   // Load the configurable Trade Scope Package list when the modal opens.
   useEffect(() => {
     if (isOpen) {
-      const list = getSettings().trades;
+      const list = settings.trades;
       setTrades(list);
       setTrade((cur) => (cur && list.includes(cur) ? cur : list[0] || ""));
     }

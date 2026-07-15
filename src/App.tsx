@@ -62,7 +62,8 @@ import CoiHistoryDrawer from "./components/CoiHistoryDrawer";
 import { exportToCSV } from "./utils/reportExporter";
 import ExecutivePrintReport from "./components/ExecutivePrintReport";
 import { formatUSD } from "./utils/currency";
-import { getEvaluationDate } from "./settingsService";
+import { todayISO } from "./settingsService";
+import { useSettings } from "./SettingsContext";
 
 export default function App() {
   // DB States
@@ -81,8 +82,9 @@ export default function App() {
   });
   const [isUserGuideOpen, setIsUserGuideOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  // The date compliance is evaluated against (real today, or a configured override).
-  const [evalDate, setEvalDate] = useState(getEvaluationDate());
+  // Settings come from context; the evaluation date derives from them and updates live.
+  const { settings } = useSettings();
+  const evalDate = settings.evaluation_date || todayISO();
 
   // History state
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
@@ -1004,7 +1006,6 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         usedTrades={Array.from(new Set(allSubcontractors.map((s) => s.trade).filter(Boolean)))}
-        onSaved={() => setEvalDate(getEvaluationDate())}
         onResetMockData={() => runDurableSeeding(true)}
         onDataReloaded={() => loadAllData(true)}
       />

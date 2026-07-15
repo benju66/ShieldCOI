@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { FolderPlus, HelpCircle, X, Upload, FileText, RefreshCw } from "lucide-react";
 import { Project } from "../types";
 import CurrencyInput from "./CurrencyInput";
-import { getSettings } from "../settingsService";
+import { useSettings } from "../SettingsContext";
 
 interface ProjectFormProps {
   isOpen: boolean;
@@ -12,33 +12,33 @@ interface ProjectFormProps {
 }
 
 export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: ProjectFormProps) {
+  const { settings } = useSettings();
   const [name, setName] = useState("");
   const [number, setNumber] = useState("");
   const [targetDate, setTargetDate] = useState("2026-12-31");
-  const [glOcc, setGlOcc] = useState(() => getSettings().default_requirements.gl_occurrence);
-  const [glAgg, setGlAgg] = useState(() => getSettings().default_requirements.gl_aggregate);
-  const [autoLimit, setAutoLimit] = useState(() => getSettings().default_requirements.auto_limit);
-  const [wcRequired, setWcRequired] = useState(() => getSettings().default_requirements.workers_comp);
-  const [warnDays, setWarnDays] = useState(() => getSettings().default_requirements.warn_days_out);
-  const [glProd, setGlProd] = useState(() => getSettings().default_requirements.gl_products_completed);
-  const [umbrella, setUmbrella] = useState(() => getSettings().default_requirements.umbrella_limit);
-  const [elAccident, setElAccident] = useState(() => getSettings().default_requirements.employers_liability_accident);
-  const [elDiseasePerson, setElDiseasePerson] = useState(() => getSettings().default_requirements.employers_liability_disease_person);
-  const [elDiseaseLimit, setElDiseaseLimit] = useState(() => getSettings().default_requirements.employers_liability_disease_limit);
-  const [professionalBaseline, setProfessionalBaseline] = useState(() => getSettings().default_requirements.professional_liability ?? 0);
-  const [pollutionBaseline, setPollutionBaseline] = useState(() => getSettings().default_requirements.pollution_liability ?? 0);
+  const [glOcc, setGlOcc] = useState(() => settings.default_requirements.gl_occurrence);
+  const [glAgg, setGlAgg] = useState(() => settings.default_requirements.gl_aggregate);
+  const [autoLimit, setAutoLimit] = useState(() => settings.default_requirements.auto_limit);
+  const [wcRequired, setWcRequired] = useState(() => settings.default_requirements.workers_comp);
+  const [warnDays, setWarnDays] = useState(() => settings.default_requirements.warn_days_out);
+  const [glProd, setGlProd] = useState(() => settings.default_requirements.gl_products_completed);
+  const [umbrella, setUmbrella] = useState(() => settings.default_requirements.umbrella_limit);
+  const [elAccident, setElAccident] = useState(() => settings.default_requirements.employers_liability_accident);
+  const [elDiseasePerson, setElDiseasePerson] = useState(() => settings.default_requirements.employers_liability_disease_person);
+  const [elDiseaseLimit, setElDiseaseLimit] = useState(() => settings.default_requirements.employers_liability_disease_limit);
+  const [professionalBaseline, setProfessionalBaseline] = useState(() => settings.default_requirements.professional_liability ?? 0);
+  const [pollutionBaseline, setPollutionBaseline] = useState(() => settings.default_requirements.pollution_liability ?? 0);
   const [saving, setSaving] = useState(false);
   const [customRequirements, setCustomRequirements] = useState<{ id: string; label: string; limit: number }[]>([]);
   const [additionalInsuredRequired, setAdditionalInsuredRequired] = useState(false);
   const [additionalInsuredNames, setAdditionalInsuredNames] = useState<string[]>([]);
   const [acceptBlanketAi, setAcceptBlanketAi] = useState(true);
-  const [expiredTemplate, setExpiredTemplate] = useState(() => getSettings().email_templates.expired_template);
-  const [insufficientTemplate, setInsufficientTemplate] = useState(() => getSettings().email_templates.insufficient_template);
+  const [expiredTemplate, setExpiredTemplate] = useState(() => settings.email_templates.expired_template);
+  const [insufficientTemplate, setInsufficientTemplate] = useState(() => settings.email_templates.insufficient_template);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
-      const settings = getSettings();
       const d = settings.default_requirements;
       if (projectToEdit) {
         setName(projectToEdit.name || "");

@@ -1,10 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Sliders, X, Plus, Trash2, Download, Upload, Database, AlertTriangle } from "lucide-react";
-import {
-  getSettings,
-  saveSettings,
-  todayISO,
-} from "../settingsService";
+import { getSettings, todayISO } from "../settingsService";
+import { useSettings } from "../SettingsContext";
 import { TradeRule, isNonEmptyRule } from "../tradeRules";
 import { ProjectRequirements } from "../types";
 import { exportAllData, importAllData, clearAllData } from "../dbService";
@@ -15,8 +12,6 @@ interface SettingsModalProps {
   onClose: () => void;
   /** Trade names currently referenced by enrolled subcontractors (for remove guardrails). */
   usedTrades: string[];
-  /** Called after settings are saved so the app can pick up e.g. a new evaluation date. */
-  onSaved: () => void;
   /** Re-seed the sample dataset. */
   onResetMockData: () => void | Promise<void>;
   /** Called after import/clear so the app can re-hydrate from storage. */
@@ -27,11 +22,11 @@ export default function SettingsModal({
   isOpen,
   onClose,
   usedTrades,
-  onSaved,
   onResetMockData,
   onDataReloaded,
 }: SettingsModalProps) {
-  const [defaultReqs, setDefaultReqs] = useState<ProjectRequirements>(() => ({ ...getSettings().default_requirements }));
+  const { settings, updateSettings, reloadSettings } = useSettings();
+  const [defaultReqs, setDefaultReqs] = useState<ProjectRequirements>(() => ({ ...settings.default_requirements }));
   const [trades, setTrades] = useState<string[]>([]);
   const [newTrade, setNewTrade] = useState("");
   const [tradeRules, setTradeRules] = useState<Record<string, TradeRule>>({});
@@ -47,7 +42,7 @@ export default function SettingsModal({
   // Hydrate local editing state each time the modal opens.
   useEffect(() => {
     if (isOpen) {
-      const s = getSettings();
+      const s = settings;
       setDefaultReqs({ ...s.default_requirements });
       setTrades(s.trades);
       setTradeRules(JSON.parse(JSON.stringify(s.trade_rules || {})));
@@ -155,7 +150,7 @@ export default function SettingsModal({
       };
     }
     setSaving(true);
-    saveSettings({
+    updateSettings({
       default_requirements: defaultReqs,
       trades: cleaned,
       trade_rules: cleanedRules,
@@ -166,7 +161,6 @@ export default function SettingsModal({
       evaluation_date: evalMode === "fixed" && evalDateOverride ? evalDateOverride : null,
     });
     setSaving(false);
-    onSaved();
     onClose();
   };
 
@@ -202,7 +196,8 @@ export default function SettingsModal({
     try {
       const text = await file.text();
       importAllData(text);
-      // Re-hydrate editing state from the imported settings.
+      reloadSettings(); // sync the app-wide settings context to the imported data
+      // Re-hydrate this modal's editing state from the imported settings.
       const s = getSettings();
       setDefaultReqs({ ...s.default_requirements });
       setTrades(s.trades);
