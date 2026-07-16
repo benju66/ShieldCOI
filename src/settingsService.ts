@@ -6,6 +6,7 @@
 
 import { TradeRule } from "./tradeRules";
 import { ProjectRequirements } from "./types";
+import { supabase, currentOrgId } from "./supabaseClient";
 
 export interface AppSettings {
   /** Org "house minimum" insurance requirements pre-filled into new projects. */
@@ -30,8 +31,6 @@ export interface AppSettings {
    */
   evaluation_date: string | null;
 }
-
-const KEY_SETTINGS = "shieldcoi_settings";
 
 /** The built-in Trade Scope Package labels offered out of the box. */
 export const DEFAULT_TRADES: string[] = [
@@ -98,34 +97,49 @@ export const DEFAULT_SETTINGS: AppSettings = {
   evaluation_date: null,
 };
 
-/**
- * Read the current settings, merged over defaults so a partial/legacy stored
- * object never leaves a field undefined.
- */
-export function getSettings(): AppSettings {
-  try {
-    const raw = localStorage.getItem(KEY_SETTINGS);
-    if (!raw) return { ...DEFAULT_SETTINGS, email_templates: { ...DEFAULT_SETTINGS.email_templates } };
-    const parsed = JSON.parse(raw) as Partial<AppSettings>;
-    return {
-      default_requirements: { ...DEFAULT_PROJECT_REQUIREMENTS, ...(parsed.default_requirements || {}) },
-      trades:
-        Array.isArray(parsed.trades) && parsed.trades.length > 0
-          ? parsed.trades
-          : [...DEFAULT_TRADES],
-      trade_rules:
-        parsed.trade_rules && typeof parsed.trade_rules === "object" ? parsed.trade_rules : {},
-      email_templates: {
-        expired_template: parsed.email_templates?.expired_template ?? DEFAULT_EXPIRED_TEMPLATE,
-        insufficient_template:
-          parsed.email_templates?.insufficient_template ?? DEFAULT_INSUFFICIENT_TEMPLATE,
-      },
-      evaluation_date: typeof parsed.evaluation_date === "string" ? parsed.evaluation_date : null,
-    };
-  } catch (err) {
-    console.error("Failed to read settings from localStorage:", err);
-    return { ...DEFAULT_SETTINGS, email_templates: { ...DEFAULT_SETTINGS.email_templates } };
+/** Normalize a partial settings object (from storage) over the built-in defaults. */
+function mergeSettings(parsed: Partial<AppSettings> | null | undefined): AppSettings {
+  const p = parsed || {};
+  return {
+    default_requirements: { ...DEFAULT_PROJECT_REQUIREMENTS, ...(p.default_requirements || {}) },
+    trades: Array.isArray(p.trades) && p.trades.length > 0 ? p.trades : [...DEFAULT_TRADES],
+    trade_rules: p.trade_rules && typeof p.trade_rules === "object" ? p.trade_rules : {},
+    email_templates: {
+      expired_template: p.email_templates?.expired_template ?? DEFAULT_EXPIRED_TEMPLATE,
+      insufficient_template: p.email_templates?.insufficient_template ?? DEFAULT_INSUFFICIENT_TEMPLATE,
+    },
+    evaluation_date: typeof p.evaluation_date === "string" ? p.evaluation_date : null,
+  };
+}
+
+/** Load the current org's settings from Supabase, merged over defaults. */
+export async function fetchSettings(): Promise<AppSettings> {
+  const { data, error } = await supabase
+    .from("org_settings")
+    .select("default_requirements, trades, trade_rules, email_templates, evaluation_date")
+    .maybeSingle();
+  if (error) {
+    console.error("Failed to load settings:", error.message);
+    return mergeSettings(null);
   }
+  return mergeSettings(data as Partial<AppSettings> | null);
+}
+
+/** Persist the current org's settings to Supabase. */
+export async function saveSettings(settings: AppSettings): Promise<void> {
+  const orgId = await currentOrgId();
+  const { error } = await supabase
+    .from("org_settings")
+    .update({
+      default_requirements: settings.default_requirements,
+      trades: settings.trades,
+      trade_rules: settings.trade_rules,
+      email_templates: settings.email_templates,
+      evaluation_date: settings.evaluation_date,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("org_id", orgId);
+  if (error) console.error("Failed to save settings:", error.message);
 }
 
 /** Today's date as a "YYYY-MM-DD" string, in local time. */
@@ -133,29 +147,4 @@ export function todayISO(): string {
   const d = new Date();
   const offsetMs = d.getTimezoneOffset() * 60_000;
   return new Date(d.getTime() - offsetMs).toISOString().slice(0, 10);
-}
-
-/**
- * The date compliance checks should treat as "today": the configured override
- * if set, otherwise the real current date.
- */
-export function getEvaluationDate(): string {
-  return getSettings().evaluation_date || todayISO();
-}
-
-export function saveSettings(settings: AppSettings): void {
-  try {
-    localStorage.setItem(KEY_SETTINGS, JSON.stringify(settings));
-  } catch (err) {
-    console.error("Failed to save settings to localStorage:", err);
-  }
-}
-
-/** Restore built-in defaults (removes the stored override). */
-export function resetSettings(): void {
-  try {
-    localStorage.removeItem(KEY_SETTINGS);
-  } catch (err) {
-    console.error("Failed to reset settings:", err);
-  }
 }

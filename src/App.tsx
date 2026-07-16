@@ -170,24 +170,23 @@ export default function App() {
   };
 
   // Seeding trigger
-  const runDurableSeeding = async (force = false) => {
+  const runDurableSeeding = async () => {
     try {
-      await seedInitialData(force);
+      await seedInitialData();
       await loadAllData(true);
     } catch (error) {
-      alert("Failed to initialize system default data.");
+      alert("Failed to load sample data.");
     }
   };
 
-  // Initial load: seed sample data (once) then hydrate the local ledger
+  // Initial load: hydrate the signed-in org's records.
   useEffect(() => {
     (async () => {
       setPageLoading(true);
       try {
-        await seedInitialData(false);
         await loadAllData();
       } catch (error) {
-        console.error("Boot seeding error: ", error);
+        console.error("Failed to load data: ", error);
       } finally {
         setPageLoading(false);
       }
@@ -1017,7 +1016,7 @@ export default function App() {
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         usedTrades={Array.from(new Set(allSubcontractors.map((s) => s.trade).filter(Boolean)))}
-        onResetMockData={() => runDurableSeeding(true)}
+        onResetMockData={() => runDurableSeeding()}
         onDataReloaded={() => loadAllData(true)}
       />
 

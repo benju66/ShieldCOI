@@ -1,225 +1,254 @@
 import { Project, Subcontractor, CoiRecord, Notification } from "./types";
 import { verifyCompliance } from "./complianceEngine";
-import { getSettings, saveSettings, getEvaluationDate, AppSettings } from "./settingsService";
+import { fetchSettings, saveSettings, todayISO, AppSettings } from "./settingsService";
+import { supabase, currentOrgId } from "./supabaseClient";
 
 /**
- * Local-only data layer. All ShieldCOI records are persisted to the browser's
- * localStorage, so the app runs with no backend or login. Each visitor keeps
- * their own copy of the data. This mirrors the previous Firestore service's
- * public API exactly, so the rest of the app is unchanged.
- *
- * When migrating to Supabase later, only this file needs to be swapped out.
+ * Supabase-backed data layer. Every table is org-scoped by Row-Level Security,
+ * so reads/updates/deletes are automatically limited to the signed-in user's
+ * org; inserts stamp `org_id` explicitly. This is the single swap point — the
+ * rest of the app calls the same async API it always has.
  */
 
-// Storage keys
-const KEY_PROJECTS = "shieldcoi_projects";
-const KEY_SUBS = "shieldcoi_subcontractors";
-const KEY_COIS = "shieldcoi_cois";
-const KEY_NOTIFS = "shieldcoi_notifications";
+// --- Row <-> app-object mapping (DB uses created_at; some types use createdAt) ---
 
-// --- Persistence helpers ---
-function read<T>(key: string): T[] {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T[]) : [];
-  } catch (err) {
-    console.error(`Failed to read "${key}" from localStorage:`, err);
-    return [];
-  }
+function rowToProject(r: any): Project {
+  return {
+    id: r.id,
+    name: r.name,
+    number: r.number,
+    target_completion_date: r.target_completion_date,
+    requirements: r.requirements,
+    createdAt: r.created_at,
+    custom_requirements: r.custom_requirements ?? [],
+    additional_insured_required: r.additional_insured_required ?? false,
+    additional_insured_names: r.additional_insured_names ?? [],
+    accept_blanket_ai: r.accept_blanket_ai ?? true,
+    email_templates: r.email_templates ?? undefined,
+    archived: r.archived ?? false,
+  };
 }
 
-function write<T>(key: string, value: T[]): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (err) {
-    console.error(`Failed to write "${key}" to localStorage:`, err);
-  }
+/** Map a (partial) Project onto DB columns — used for both insert and update. */
+function projectToRow(p: Partial<Project>): Record<string, any> {
+  const row: Record<string, any> = {};
+  const keys: (keyof Project)[] = [
+    "name",
+    "number",
+    "target_completion_date",
+    "requirements",
+    "custom_requirements",
+    "additional_insured_required",
+    "additional_insured_names",
+    "accept_blanket_ai",
+    "email_templates",
+    "archived",
+  ];
+  for (const k of keys) if (p[k] !== undefined) row[k] = p[k];
+  return row;
 }
 
-function genId(prefix: string): string {
-  return `${prefix}_` + Math.random().toString(36).substring(2, 9);
+function rowToSub(r: any): Subcontractor {
+  return {
+    id: r.id,
+    project_id: r.project_id,
+    company_name: r.company_name,
+    trade: r.trade,
+    contract_value: Number(r.contract_value),
+    compliance_status: r.compliance_status,
+    manual_override: r.manual_override,
+    override_notes: r.override_notes ?? "",
+    createdAt: r.created_at,
+    vendor_type: r.vendor_type,
+    waiver_reason_type: r.waiver_reason_type ?? null,
+    waiver_authorized_by: r.waiver_authorized_by ?? null,
+    waiver_expiration_date: r.waiver_expiration_date ?? null,
+  };
+}
+
+function subToRow(s: Partial<Subcontractor>): Record<string, any> {
+  const row: Record<string, any> = {};
+  const keys: (keyof Subcontractor)[] = [
+    "project_id",
+    "company_name",
+    "trade",
+    "contract_value",
+    "compliance_status",
+    "manual_override",
+    "override_notes",
+    "vendor_type",
+    "waiver_reason_type",
+    "waiver_authorized_by",
+    "waiver_expiration_date",
+  ];
+  for (const k of keys) if (s[k] !== undefined) row[k] = s[k];
+  return row;
+}
+
+function rowToCoi(r: any): CoiRecord {
+  const { org_id, ...rest } = r;
+  return rest as CoiRecord;
+}
+
+function rowToNotif(r: any): Notification {
+  return {
+    id: r.id,
+    project_id: r.project_id,
+    project_name: r.project_name,
+    subcontractor_name: r.subcontractor_name,
+    type: r.type,
+    message: r.message,
+    timestamp: r.created_at,
+    resolved: r.resolved,
+  };
 }
 
 // =====================================================================
 // Projects
 // =====================================================================
 
-/**
- * Fetch all projects (newest first)
- */
 export async function getProjects(): Promise<Project[]> {
-  const projects = read<Project>(KEY_PROJECTS);
-  return projects.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+  const { data, error } = await supabase
+    .from("projects")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(rowToProject);
 }
 
-/**
- * Fetch a single project
- */
 export async function getProject(projectId: string): Promise<Project | null> {
-  const projects = read<Project>(KEY_PROJECTS);
-  return projects.find((p) => p.id === projectId) || null;
+  const { data, error } = await supabase.from("projects").select("*").eq("id", projectId).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? rowToProject(data) : null;
 }
 
-/**
- * Create a new project
- */
 export async function createProject(project: Omit<Project, "id" | "createdAt">): Promise<Project> {
-  const id = genId("proj");
-  const now = new Date().toISOString();
-  const newProject: Project = { ...project, id, createdAt: now };
-
-  const projects = read<Project>(KEY_PROJECTS);
-  projects.push(newProject);
-  write(KEY_PROJECTS, projects);
-  return newProject;
+  const org_id = await currentOrgId();
+  const { data, error } = await supabase
+    .from("projects")
+    .insert({ org_id, ...projectToRow(project) })
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return rowToProject(data);
 }
 
-/**
- * Update top-level project specifications
- */
 export async function updateProject(projectId: string, updates: Partial<Project>): Promise<void> {
-  const projects = read<Project>(KEY_PROJECTS);
-  const idx = projects.findIndex((p) => p.id === projectId);
-  if (idx === -1) {
-    throw new Error(`Project matching ID ${projectId} was not found.`);
-  }
-  projects[idx] = { ...projects[idx], ...updates };
-  write(KEY_PROJECTS, projects);
+  const { error } = await supabase.from("projects").update(projectToRow(updates)).eq("id", projectId);
+  if (error) throw new Error(error.message);
 }
 
-/**
- * Cascading project deletion (removes nested subcontractors and COIs)
- */
+/** Delete a project (subcontractors + COIs cascade via FK). */
 export async function deleteProject(projectId: string): Promise<void> {
-  write(KEY_PROJECTS, read<Project>(KEY_PROJECTS).filter((p) => p.id !== projectId));
-  write(KEY_SUBS, read<Subcontractor>(KEY_SUBS).filter((s) => s.project_id !== projectId));
-  write(KEY_COIS, read<CoiRecord>(KEY_COIS).filter((c) => c.project_id !== projectId));
+  const { error } = await supabase.from("projects").delete().eq("id", projectId);
+  if (error) throw new Error(error.message);
 }
 
 // =====================================================================
 // Subcontractors
 // =====================================================================
 
-/**
- * Fetch all subcontractors for a project (oldest first)
- */
 export async function getSubcontractors(projectId: string): Promise<Subcontractor[]> {
-  return read<Subcontractor>(KEY_SUBS)
-    .filter((s) => s.project_id === projectId)
-    .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
+  const { data, error } = await supabase
+    .from("subcontractors")
+    .select("*")
+    .eq("project_id", projectId)
+    .order("created_at", { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(rowToSub);
 }
 
-/**
- * Create/Add a subcontractor to a project
- */
+async function getSubcontractorById(subId: string): Promise<Subcontractor | null> {
+  const { data, error } = await supabase.from("subcontractors").select("*").eq("id", subId).maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ? rowToSub(data) : null;
+}
+
 export async function createSubcontractor(
   projectId: string,
-  sub: Omit<Subcontractor, "id" | "project_id" | "compliance_status" | "manual_override" | "override_notes" | "createdAt" | "vendor_type"> & { vendor_type?: "Subcontractor" | "Supplier" }
+  sub: Omit<
+    Subcontractor,
+    "id" | "project_id" | "compliance_status" | "manual_override" | "override_notes" | "createdAt" | "vendor_type"
+  > & { vendor_type?: "Subcontractor" | "Supplier" }
 ): Promise<Subcontractor> {
-  const id = genId("sub");
-  const now = new Date().toISOString();
-  const newSub: Subcontractor = {
-    ...sub,
-    id,
-    project_id: projectId,
-    compliance_status: "Pending Upload",
-    manual_override: false,
-    override_notes: "",
-    createdAt: now,
-    vendor_type: sub.vendor_type || "Subcontractor",
-  };
-
-  const subs = read<Subcontractor>(KEY_SUBS);
-  subs.push(newSub);
-  write(KEY_SUBS, subs);
-  return newSub;
+  const org_id = await currentOrgId();
+  const { data, error } = await supabase
+    .from("subcontractors")
+    .insert({
+      org_id,
+      project_id: projectId,
+      company_name: sub.company_name,
+      trade: sub.trade,
+      contract_value: sub.contract_value,
+      compliance_status: "Pending Upload",
+      manual_override: false,
+      override_notes: "",
+      vendor_type: sub.vendor_type || "Subcontractor",
+    })
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return rowToSub(data);
 }
 
-/**
- * Update subcontractor override & compliance status
- */
 export async function updateSubcontractor(
   projectId: string,
   subId: string,
   updates: Partial<Subcontractor>
 ): Promise<void> {
-  const subs = read<Subcontractor>(KEY_SUBS);
-  const idx = subs.findIndex((s) => s.id === subId && s.project_id === projectId);
-
-  let finalUpdates = { ...updates };
-  const currentSub = idx !== -1 ? subs[idx] : null;
+  const currentSub = await getSubcontractorById(subId);
+  const finalUpdates = { ...updates };
 
   const isOverrideActive =
-    finalUpdates.manual_override !== undefined
-      ? finalUpdates.manual_override
-      : currentSub?.manual_override;
+    finalUpdates.manual_override !== undefined ? finalUpdates.manual_override : currentSub?.manual_override;
 
   if (isOverrideActive) {
     finalUpdates.compliance_status = "Approved Exception";
   }
 
-  if (idx !== -1) {
-    subs[idx] = { ...subs[idx], ...finalUpdates };
-    write(KEY_SUBS, subs);
-  }
+  const { error } = await supabase.from("subcontractors").update(subToRow(finalUpdates)).eq("id", subId);
+  if (error) throw new Error(error.message);
 
   if (finalUpdates.compliance_status === "Compliant") {
-    const companyName = currentSub?.company_name || "Subcontractor";
-    resolveNotificationsFor(projectId, companyName);
+    await resolveNotificationsFor(projectId, currentSub?.company_name || "Subcontractor");
   }
 }
 
-/**
- * Safely remove a subcontractor and all nested COIs
- */
-export async function deleteSubcontractor(projectId: string, subId: string): Promise<void> {
-  write(
-    KEY_COIS,
-    read<CoiRecord>(KEY_COIS).filter((c) => !(c.project_id === projectId && c.subcontractor_id === subId))
-  );
-  write(
-    KEY_SUBS,
-    read<Subcontractor>(KEY_SUBS).filter((s) => !(s.id === subId && s.project_id === projectId))
-  );
+/** Delete a subcontractor (its COIs cascade via FK). */
+export async function deleteSubcontractor(_projectId: string, subId: string): Promise<void> {
+  const { error } = await supabase.from("subcontractors").delete().eq("id", subId);
+  if (error) throw new Error(error.message);
 }
 
 // =====================================================================
 // COI Records
 // =====================================================================
 
-/**
- * Get all COIs for a subcontractor (newest first)
- */
-export async function getCoiRecords(projectId: string, subcontractorId: string): Promise<CoiRecord[]> {
-  return read<CoiRecord>(KEY_COIS)
-    .filter((c) => c.project_id === projectId && c.subcontractor_id === subcontractorId)
-    .sort((a, b) => (b.uploaded_at || "").localeCompare(a.uploaded_at || ""));
+export async function getCoiRecords(_projectId: string, subcontractorId: string): Promise<CoiRecord[]> {
+  const { data, error } = await supabase
+    .from("coi_records")
+    .select("*")
+    .eq("subcontractor_id", subcontractorId)
+    .order("uploaded_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(rowToCoi);
 }
 
-/**
- * Add a COI record and automatically re-evaluate compliance
- */
 export async function submitCoiRecord(
   projectId: string,
   subcontractorId: string,
   coiData: Omit<CoiRecord, "id" | "project_id" | "subcontractor_id" | "uploaded_at" | "validation_errors">
 ): Promise<CoiRecord> {
-  const id = genId("coi");
-  const now = new Date().toISOString();
+  const org_id = await currentOrgId();
 
-  // 1. Fetch parent project and subcontractor
+  // 1. Fetch parent project + subcontractor, and org settings for the eval.
   const project = await getProject(projectId);
-  if (!project) {
-    throw new Error(`Project matching ID ${projectId} was not found.`);
-  }
-
-  const subs = read<Subcontractor>(KEY_SUBS);
-  const subIdx = subs.findIndex((s) => s.id === subcontractorId && s.project_id === projectId);
-  if (subIdx === -1) {
-    throw new Error(`Subcontractor matching ID ${subcontractorId} was not found.`);
-  }
-  const subcontractor = subs[subIdx];
+  if (!project) throw new Error(`Project matching ID ${projectId} was not found.`);
+  const subcontractor = await getSubcontractorById(subcontractorId);
+  if (!subcontractor) throw new Error(`Subcontractor matching ID ${subcontractorId} was not found.`);
   const trade = subcontractor.trade || "Other Trades";
+  const settings = await fetchSettings();
+  const evalDate = settings.evaluation_date || todayISO();
 
   // 2. Perform compliance checks
   const evaluation = verifyCompliance(
@@ -243,23 +272,17 @@ export async function submitCoiRecord(
       gl_addl_insd: coiData.gl_addl_insd_extracted,
     },
     trade,
-    getEvaluationDate(),
-    getSettings().trade_rules
+    evalDate,
+    settings.trade_rules
   );
 
-  const newCoi: CoiRecord = {
-    ...coiData,
-    id,
-    project_id: projectId,
-    subcontractor_id: subcontractorId,
-    uploaded_at: now,
-    validation_errors: evaluation.errors,
-  };
-
   // 3. Write the COI record
-  const cois = read<CoiRecord>(KEY_COIS);
-  cois.push(newCoi);
-  write(KEY_COIS, cois);
+  const { data: insertedCoi, error: coiError } = await supabase
+    .from("coi_records")
+    .insert({ org_id, project_id: projectId, subcontractor_id: subcontractorId, ...coiData, validation_errors: evaluation.errors })
+    .select("*")
+    .single();
+  if (coiError) throw new Error(coiError.message);
 
   // 4. Update subcontractor status (honoring active manual overrides / waivers)
   let targetStatus: Subcontractor["compliance_status"] = evaluation.status;
@@ -278,17 +301,12 @@ export async function submitCoiRecord(
       waiverAuthorizedBy = null;
       waiverExpirationDate = null;
     } else {
-      const currentDateStr = getEvaluationDate();
-      const today = new Date(currentDateStr);
+      const today = new Date(evalDate);
       let isWaiverExpired = false;
-
       if (waiverExpirationDate) {
         const expDate = new Date(waiverExpirationDate);
-        if (expDate <= today) {
-          isWaiverExpired = true;
-        }
+        if (expDate <= today) isWaiverExpired = true;
       }
-
       if (isWaiverExpired) {
         manualOverride = false;
         targetStatus = "Expired";
@@ -302,25 +320,25 @@ export async function submitCoiRecord(
     }
   }
 
-  subs[subIdx] = {
-    ...subs[subIdx],
-    compliance_status: targetStatus,
-    manual_override: manualOverride,
-    override_notes: overrideNotes,
-    waiver_reason_type: waiverReasonType,
-    waiver_authorized_by: waiverAuthorizedBy,
-    waiver_expiration_date: waiverExpirationDate,
-  };
-  write(KEY_SUBS, subs);
+  const { error: subError } = await supabase
+    .from("subcontractors")
+    .update({
+      compliance_status: targetStatus,
+      manual_override: manualOverride,
+      override_notes: overrideNotes,
+      waiver_reason_type: waiverReasonType,
+      waiver_authorized_by: waiverAuthorizedBy,
+      waiver_expiration_date: waiverExpirationDate,
+    })
+    .eq("id", subcontractorId);
+  if (subError) throw new Error(subError.message);
 
   if (targetStatus === "Compliant") {
-    resolveNotificationsFor(projectId, subcontractor.company_name || "Subcontractor");
+    await resolveNotificationsFor(projectId, subcontractor.company_name || "Subcontractor");
   }
 
-  // 5. Create notifications for errors or status locks
+  // 5. Create notifications for errors
   if (evaluation.errors.length > 0) {
-    const subName = subcontractor.company_name || "Subcontractor";
-
     let alertType: "danger" | "warning" | "info" = "warning";
     if (evaluation.status === "Expired") alertType = "danger";
     else if (evaluation.status === "Insufficient Coverage") alertType = "warning";
@@ -328,392 +346,67 @@ export async function submitCoiRecord(
     await createNotification({
       project_id: projectId,
       project_name: project.name,
-      subcontractor_name: subName,
+      subcontractor_name: subcontractor.company_name || "Subcontractor",
       type: alertType,
       message: "Draft email message ready. Click to view and copy.",
     });
   }
 
-  return newCoi;
+  return rowToCoi(insertedCoi);
 }
 
 // =====================================================================
 // Notifications
 // =====================================================================
 
-/**
- * Mark unresolved notifications matching a project/subcontractor as resolved.
- */
-function resolveNotificationsFor(projectId: string, subcontractorName: string): void {
-  const notifs = read<Notification>(KEY_NOTIFS);
-  let changed = false;
-  for (const n of notifs) {
-    if (
-      (n.resolved === false || n.resolved === undefined) &&
-      (n.project_id === projectId || n.subcontractor_name === subcontractorName)
-    ) {
-      n.resolved = true;
-      changed = true;
-    }
-  }
-  if (changed) write(KEY_NOTIFS, notifs);
+/** Resolve unresolved notifications matching a project OR a subcontractor name. */
+async function resolveNotificationsFor(projectId: string, subcontractorName: string): Promise<void> {
+  const byProject = await supabase
+    .from("notifications")
+    .update({ resolved: true })
+    .eq("resolved", false)
+    .eq("project_id", projectId);
+  if (byProject.error) console.error("Failed to resolve notifications:", byProject.error.message);
+  const byName = await supabase
+    .from("notifications")
+    .update({ resolved: true })
+    .eq("resolved", false)
+    .eq("subcontractor_name", subcontractorName);
+  if (byName.error) console.error("Failed to resolve notifications:", byName.error.message);
 }
 
-/**
- * Notifications timeline (newest first)
- */
 export async function getNotifications(): Promise<Notification[]> {
-  return read<Notification>(KEY_NOTIFS).sort((a, b) =>
-    (b.timestamp || "").localeCompare(a.timestamp || "")
-  );
+  const { data, error } = await supabase
+    .from("notifications")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(rowToNotif);
 }
 
 export async function createNotification(
   notif: Omit<Notification, "id" | "timestamp" | "resolved"> & { resolved?: boolean }
 ): Promise<Notification> {
-  const id = genId("notif");
-  const now = new Date().toISOString();
-  const newNotif: Notification = {
-    ...notif,
-    id,
-    timestamp: now,
-    resolved: notif.resolved ?? false,
-  };
-
-  const notifs = read<Notification>(KEY_NOTIFS);
-  notifs.push(newNotif);
-  write(KEY_NOTIFS, notifs);
-  return newNotif;
+  const org_id = await currentOrgId();
+  const { data, error } = await supabase
+    .from("notifications")
+    .insert({
+      org_id,
+      project_id: notif.project_id,
+      project_name: notif.project_name,
+      subcontractor_name: notif.subcontractor_name,
+      type: notif.type,
+      message: notif.message,
+      resolved: notif.resolved ?? false,
+    })
+    .select("*")
+    .single();
+  if (error) throw new Error(error.message);
+  return rowToNotif(data);
 }
 
 // =====================================================================
-// Seeding
-// =====================================================================
-
-let seedingInFlight: Promise<void> | null = null;
-
-/**
- * Seeding routine to make the dashboard fully responsive & functional on load.
- *
- * Concurrent non-forced calls share a single in-flight run so the sample data
- * can't be seeded twice: React StrictMode double-invokes the boot effect in dev,
- * and the async "already populated?" check below can't see a racing sibling
- * call's not-yet-written projects on its own. The claim is assigned
- * synchronously (before the first await), so the second caller always observes
- * it and returns the same promise instead of starting a second seed.
- */
-export async function seedInitialData(force = false): Promise<void> {
-  if (!force && seedingInFlight) return seedingInFlight;
-  const run = performSeed(force);
-  if (!force) {
-    seedingInFlight = run;
-    void run.finally(() => {
-      seedingInFlight = null;
-    });
-  }
-  return run;
-}
-
-async function performSeed(force: boolean): Promise<void> {
-  try {
-    // Check if we already have projects to prevent duplicate seeding
-    const currentProjs = await getProjects();
-    if (currentProjs.length > 0 && !force) {
-      console.log("Local store already populated. Skipping seed.");
-      return;
-    }
-
-    if (force) {
-      // Reset all collections for a clean re-seed
-      write(KEY_PROJECTS, []);
-      write(KEY_SUBS, []);
-      write(KEY_COIS, []);
-      write(KEY_NOTIFS, []);
-    }
-
-    console.log("Local store is empty. Populating clean visual sample logs...");
-
-    // Project 1
-    const p1 = await createProject({
-      name: "Aurora Luxury Suites",
-      number: "P-2026-01",
-      target_completion_date: "2026-12-31",
-      requirements: {
-        gl_occurrence: 2000000,
-        gl_aggregate: 4000000,
-        auto_limit: 1000000,
-        workers_comp: true,
-        warn_days_out: 60,
-        gl_products_completed: 2000000,
-        umbrella_limit: 1000000,
-        employers_liability_accident: 1000000,
-        employers_liability_disease_person: 1000000,
-        employers_liability_disease_limit: 1000000,
-      },
-    });
-
-    // Sub 1A - Compliant
-    const sub1A = await createSubcontractor(p1.id, {
-      company_name: "ACME Electrical Solutions LLC",
-      trade: "Electrical",
-      contract_value: 385000,
-    });
-    await submitCoiRecord(p1.id, sub1A.id, {
-      file_name: "ACORD25_ACME_Electrical.pdf",
-      insured_extracted_name: "ACME Electrical Solutions LLC",
-      gl_occurrence_extracted: 2000000,
-      gl_aggregate_extracted: 4000000,
-      auto_combined_single_limit_extracted: 1000000,
-      workers_comp_statutory_extracted: true,
-      policy_expiration_date_extracted: "2026-09-15", // In 96 days
-      gl_products_completed_extracted: 2000000,
-      umbrella_limit_extracted: 5000000, // Meets the $5M required override for Electrical trade
-      employers_liability_accident_extracted: 1000000,
-      employers_liability_disease_person_extracted: 1000000,
-      employers_liability_disease_limit_extracted: 1000000,
-      professional_liability_extracted: 2000000, // Meets professional liability required for Electrical
-      pollution_liability_extracted: 0,
-    });
-
-    // Sub 1B - Insufficient Coverage
-    const sub1B = await createSubcontractor(p1.id, {
-      company_name: "Apex Plumbing & Piping Co.",
-      trade: "Plumbing",
-      contract_value: 240000,
-    });
-    await submitCoiRecord(p1.id, sub1B.id, {
-      file_name: "Apex_Plumbing_COI_2026.pdf",
-      insured_extracted_name: "Apex Plumbing & Piping Co.",
-      gl_occurrence_extracted: 1000000, // short of $2M req
-      gl_aggregate_extracted: 2000000, // short of $4M req
-      auto_combined_single_limit_extracted: 500000, // short of $1M req
-      workers_comp_statutory_extracted: false, // missing wc
-      policy_expiration_date_extracted: "2026-11-20",
-      gl_products_completed_extracted: 2000000,
-      umbrella_limit_extracted: 5000000,
-      employers_liability_accident_extracted: 1000000,
-      employers_liability_disease_person_extracted: 1000000,
-      employers_liability_disease_limit_extracted: 1000000,
-      professional_liability_extracted: 2000000,
-      pollution_liability_extracted: 2000000,
-    });
-
-    // Sub 1C - Expired
-    const sub1C = await createSubcontractor(p1.id, {
-      company_name: "Titan Structural Steel Corp",
-      trade: "Other Trades",
-      contract_value: 710000,
-    });
-    await submitCoiRecord(p1.id, sub1C.id, {
-      file_name: "titan_steel_insurance_acord.png",
-      insured_extracted_name: "Titan Structural Steel Corp",
-      gl_occurrence_extracted: 5000000,
-      gl_aggregate_extracted: 10000000,
-      auto_combined_single_limit_extracted: 2000000,
-      workers_comp_statutory_extracted: true,
-      policy_expiration_date_extracted: "2026-05-10", // Expired Relative to June 11, 2026
-      gl_products_completed_extracted: 2000000,
-      umbrella_limit_extracted: 1000000,
-      employers_liability_accident_extracted: 1000000,
-      employers_liability_disease_person_extracted: 1000000,
-      employers_liability_disease_limit_extracted: 1000000,
-      professional_liability_extracted: 0,
-      pollution_liability_extracted: 0,
-    });
-
-    // Project 2
-    const p2 = await createProject({
-      name: "Evergreen Business Park",
-      number: "P-2026-02",
-      target_completion_date: "2027-06-15",
-      requirements: {
-        gl_occurrence: 1000000,
-        gl_aggregate: 2000000,
-        auto_limit: 1000000,
-        workers_comp: true,
-        warn_days_out: 30,
-        gl_products_completed: 2000000,
-        umbrella_limit: 1000000,
-        employers_liability_accident: 1000000,
-        employers_liability_disease_person: 1000000,
-        employers_liability_disease_limit: 1000000,
-      },
-    });
-
-    // Sub 2A - Compliant
-    const sub2A = await createSubcontractor(p2.id, {
-      company_name: "Solid Ground Concrete Works",
-      trade: "Concrete (Standard)",
-      contract_value: 190000,
-    });
-    await submitCoiRecord(p2.id, sub2A.id, {
-      file_name: "solid_ground_concrete_acord25.pdf",
-      insured_extracted_name: "Solid Ground Concrete Works",
-      gl_occurrence_extracted: 2000000,
-      gl_aggregate_extracted: 4000000,
-      auto_combined_single_limit_extracted: 1000000,
-      workers_comp_statutory_extracted: true,
-      policy_expiration_date_extracted: "2027-01-15",
-      gl_products_completed_extracted: 2000000,
-      umbrella_limit_extracted: 5000000, // Meets concrete trade limit 5M
-      employers_liability_accident_extracted: 1000000,
-      employers_liability_disease_person_extracted: 1000000,
-      employers_liability_disease_limit_extracted: 1000000,
-      professional_liability_extracted: 0,
-      pollution_liability_extracted: 2000000, // Meets concrete trade pollution limit 2M
-    });
-
-    // Sub 2B - Compliant via Exception (Manual Override)
-    const sub2B = await createSubcontractor(p2.id, {
-      company_name: "Vortex Mechanical Services",
-      trade: "HVAC",
-      contract_value: 125000,
-    });
-    await submitCoiRecord(p2.id, sub2B.id, {
-      file_name: "vortex_hvac_coi_draft.pdf",
-      insured_extracted_name: "Vortex Mechanical LLC",
-      gl_occurrence_extracted: 1000000,
-      gl_aggregate_extracted: 1500000, // short of $2M req
-      auto_combined_single_limit_extracted: 1000000,
-      workers_comp_statutory_extracted: true,
-      policy_expiration_date_extracted: "2026-11-01",
-      gl_products_completed_extracted: 1500000,
-      umbrella_limit_extracted: 1000000, // short of trade required umbrella
-      employers_liability_accident_extracted: 1000000,
-      employers_liability_disease_person_extracted: 1000000,
-      employers_liability_disease_limit_extracted: 1000000,
-      professional_liability_extracted: 2000000,
-      pollution_liability_extracted: 2000000,
-    });
-    await updateSubcontractor(p2.id, sub2B.id, {
-      manual_override: true,
-      compliance_status: "Compliant",
-      override_notes: "Approved via Exception: Risk Committee reviewed low risk installation height. Exemption granted by Project Manager.",
-    });
-
-    // Sub 2C - ACME Electrical again (same vendor as Project 1, different legal suffix)
-    const sub2C = await createSubcontractor(p2.id, {
-      company_name: "ACME Electrical Solutions, Inc.",
-      trade: "Electrical",
-      contract_value: 210000,
-    });
-    await submitCoiRecord(p2.id, sub2C.id, {
-      file_name: "ACME_Electrical_Evergreen_2026.pdf",
-      insured_extracted_name: "ACME Electrical Solutions Inc",
-      gl_occurrence_extracted: 2000000,
-      gl_aggregate_extracted: 4000000,
-      auto_combined_single_limit_extracted: 1000000,
-      workers_comp_statutory_extracted: true,
-      policy_expiration_date_extracted: "2027-03-01",
-      gl_products_completed_extracted: 2000000,
-      umbrella_limit_extracted: 5000000,
-      employers_liability_accident_extracted: 1000000,
-      employers_liability_disease_person_extracted: 1000000,
-      employers_liability_disease_limit_extracted: 1000000,
-      professional_liability_extracted: 2000000,
-      pollution_liability_extracted: 0,
-    });
-
-    // Project 3
-    const p3 = await createProject({
-      name: "Summit Heights Canopy",
-      number: "P-2026-03",
-      target_completion_date: "2026-10-01",
-      requirements: {
-        gl_occurrence: 3000000,
-        gl_aggregate: 5000005,
-        auto_limit: 2000000,
-        workers_comp: true,
-        warn_days_out: 90,
-        gl_products_completed: 2000000,
-        umbrella_limit: 1000000,
-        employers_liability_accident: 1000000,
-        employers_liability_disease_person: 1000000,
-        employers_liability_disease_limit: 1000000,
-      },
-    });
-
-    // Sub 3A - Pending
-    await createSubcontractor(p3.id, {
-      company_name: "Summit Roofing Specialists",
-      trade: "Roofing",
-      contract_value: 145000,
-    });
-
-    // Sub 3B - ACME Electrical a third time, awaiting its certificate here
-    await createSubcontractor(p3.id, {
-      company_name: "Acme Electrical Solutions",
-      trade: "Electrical",
-      contract_value: 175000,
-    });
-
-    // Project 4 (archived / completed) — hidden from active dashboards, triage, and
-    // vendor roll-ups. ACME is on this one too, so its "active projects" count stays 3.
-    const p4 = await createProject({
-      name: "Harbor Point Renovation",
-      number: "P-2025-11",
-      target_completion_date: "2026-03-30",
-      archived: true,
-      requirements: {
-        gl_occurrence: 2000000,
-        gl_aggregate: 4000000,
-        auto_limit: 1000000,
-        workers_comp: true,
-        warn_days_out: 60,
-        gl_products_completed: 2000000,
-        umbrella_limit: 1000000,
-        employers_liability_accident: 1000000,
-        employers_liability_disease_person: 1000000,
-        employers_liability_disease_limit: 1000000,
-      },
-    });
-    const sub4A = await createSubcontractor(p4.id, {
-      company_name: "ACME Electrical Solutions LLC",
-      trade: "Electrical",
-      contract_value: 260000,
-    });
-    await submitCoiRecord(p4.id, sub4A.id, {
-      file_name: "ACME_Electrical_HarborPoint_2025.pdf",
-      insured_extracted_name: "ACME Electrical Solutions LLC",
-      gl_occurrence_extracted: 2000000,
-      gl_aggregate_extracted: 4000000,
-      auto_combined_single_limit_extracted: 1000000,
-      workers_comp_statutory_extracted: true,
-      policy_expiration_date_extracted: "2026-04-30",
-      gl_products_completed_extracted: 2000000,
-      umbrella_limit_extracted: 5000000,
-      employers_liability_accident_extracted: 1000000,
-      employers_liability_disease_person_extracted: 1000000,
-      employers_liability_disease_limit_extracted: 1000000,
-      professional_liability_extracted: 2000000,
-      pollution_liability_extracted: 0,
-    });
-
-    // Seed introductory notifications explicitly
-    await createNotification({
-      project_id: p1.id,
-      project_name: "Aurora Luxury Suites",
-      subcontractor_name: "Titan Structural Steel Corp",
-      type: "danger",
-      message: "Alert: Titan Structural Steel general liability policy expired on 2026-05-10. Work holds apply.",
-    });
-
-    await createNotification({
-      project_id: p1.id,
-      project_name: "Aurora Luxury Suites",
-      subcontractor_name: "Apex Plumbing & Piping Co.",
-      type: "warning",
-      message: "Warning: Apex Plumbing Insurance Limits ($1M/$500k) do not meet Project threshold requirements.",
-    });
-
-    console.log("Local store successfully populated with visually rich interactive sample logs!");
-  } catch (err) {
-    console.error("Failed to seed initial collections:", err);
-  }
-}
-
-// =====================================================================
-// Data management (export / import / clear)
+// Data management (export / import / clear / sample data)
 // =====================================================================
 
 interface ShieldCoiExport {
@@ -727,31 +420,38 @@ interface ShieldCoiExport {
   settings: AppSettings;
 }
 
-/**
- * Serialize every record collection plus org settings to a JSON string suitable
- * for download and later re-import. This is the manual backup path while the app
- * has no backend.
- */
-export function exportAllData(): string {
+/** Serialize the org's data + settings to a JSON string for download/backup. */
+export async function exportAllData(): Promise<string> {
+  const projects = await getProjects();
+  const subcontractors: Subcontractor[] = [];
+  const cois: CoiRecord[] = [];
+  for (const p of projects) {
+    const subs = await getSubcontractors(p.id);
+    subcontractors.push(...subs);
+    for (const s of subs) cois.push(...(await getCoiRecords(p.id, s.id)));
+  }
+  const notifications = await getNotifications();
+  const settings = await fetchSettings();
   const payload: ShieldCoiExport = {
     _type: "shieldcoi_export",
-    _version: 1,
+    _version: 2,
     exported_at: new Date().toISOString(),
-    projects: read<Project>(KEY_PROJECTS),
-    subcontractors: read<Subcontractor>(KEY_SUBS),
-    cois: read<CoiRecord>(KEY_COIS),
-    notifications: read<Notification>(KEY_NOTIFS),
-    settings: getSettings(),
+    projects,
+    subcontractors,
+    cois,
+    notifications,
+    settings,
   };
   return JSON.stringify(payload, null, 2);
 }
 
 /**
- * Replace all local data with the contents of a previously exported file.
- * Throws if the JSON is unparseable or clearly not a ShieldCOI export.
+ * Replace the org's data with the contents of an export file. Ids are remapped
+ * to fresh uuids (so exports from the old localStorage version — with non-uuid
+ * ids — import cleanly too), preserving project/subcontractor relationships.
  */
-export function importAllData(json: string): void {
-  let data: Partial<ShieldCoiExport>;
+export async function importAllData(json: string): Promise<void> {
+  let data: any;
   try {
     data = JSON.parse(json);
   } catch {
@@ -760,21 +460,316 @@ export function importAllData(json: string): void {
   if (!data || typeof data !== "object" || !Array.isArray(data.projects)) {
     throw new Error("That file doesn't look like a ShieldCOI export.");
   }
+  const org_id = await currentOrgId();
+  await clearAllData();
 
-  write(KEY_PROJECTS, data.projects ?? []);
-  write(KEY_SUBS, data.subcontractors ?? []);
-  write(KEY_COIS, data.cois ?? []);
-  write(KEY_NOTIFS, data.notifications ?? []);
-  if (data.settings) saveSettings(data.settings);
+  const projMap = new Map<string, string>();
+  for (const p of data.projects) {
+    const { data: row, error } = await supabase
+      .from("projects")
+      .insert({ org_id, ...projectToRow(p) })
+      .select("id")
+      .single();
+    if (error) throw new Error("Import failed (projects): " + error.message);
+    projMap.set(p.id, row.id);
+  }
+
+  const subMap = new Map<string, string>();
+  for (const s of data.subcontractors ?? []) {
+    const newProjId = projMap.get(s.project_id);
+    if (!newProjId) continue;
+    const { data: row, error } = await supabase
+      .from("subcontractors")
+      .insert({ org_id, ...subToRow(s), project_id: newProjId })
+      .select("id")
+      .single();
+    if (error) throw new Error("Import failed (subcontractors): " + error.message);
+    subMap.set(s.id, row.id);
+  }
+
+  for (const c of data.cois ?? []) {
+    const newProjId = projMap.get(c.project_id);
+    const newSubId = subMap.get(c.subcontractor_id);
+    if (!newProjId || !newSubId) continue;
+    const { id, org_id: _oid, project_id, subcontractor_id, uploaded_at, ...coiFields } = c;
+    const { error } = await supabase
+      .from("coi_records")
+      .insert({ org_id, project_id: newProjId, subcontractor_id: newSubId, ...coiFields });
+    if (error) throw new Error("Import failed (COIs): " + error.message);
+  }
+
+  for (const n of data.notifications ?? []) {
+    const { error } = await supabase.from("notifications").insert({
+      org_id,
+      project_id: n.project_id ? projMap.get(n.project_id) ?? null : null,
+      project_name: n.project_name,
+      subcontractor_name: n.subcontractor_name,
+      type: n.type ?? "info",
+      message: n.message,
+      resolved: n.resolved ?? false,
+    });
+    if (error) throw new Error("Import failed (notifications): " + error.message);
+  }
+
+  if (data.settings) await saveSettings(data.settings);
 }
 
-/**
- * Wipe all record collections (projects, subcontractors, COIs, notifications).
- * Org settings are intentionally preserved.
- */
-export function clearAllData(): void {
-  write(KEY_PROJECTS, []);
-  write(KEY_SUBS, []);
-  write(KEY_COIS, []);
-  write(KEY_NOTIFS, []);
+/** Delete all of the org's records (projects cascade to subcontractors + COIs). */
+export async function clearAllData(): Promise<void> {
+  const projErr = (await supabase.from("projects").delete().not("id", "is", null)).error;
+  if (projErr) throw new Error(projErr.message);
+  const notifErr = (await supabase.from("notifications").delete().not("id", "is", null)).error;
+  if (notifErr) throw new Error(notifErr.message);
+}
+
+// =====================================================================
+// Sample data (optional — populate an org to explore the app)
+// =====================================================================
+
+/** Replace the org's records with the built-in sample dataset. */
+export async function seedInitialData(): Promise<void> {
+  await clearAllData();
+
+  const p1 = await createProject({
+    name: "Aurora Luxury Suites",
+    number: "P-2026-01",
+    target_completion_date: "2026-12-31",
+    requirements: {
+      gl_occurrence: 2000000,
+      gl_aggregate: 4000000,
+      auto_limit: 1000000,
+      workers_comp: true,
+      warn_days_out: 60,
+      gl_products_completed: 2000000,
+      umbrella_limit: 1000000,
+      employers_liability_accident: 1000000,
+      employers_liability_disease_person: 1000000,
+      employers_liability_disease_limit: 1000000,
+    },
+  });
+
+  const sub1A = await createSubcontractor(p1.id, {
+    company_name: "ACME Electrical Solutions LLC",
+    trade: "Electrical",
+    contract_value: 385000,
+  });
+  await submitCoiRecord(p1.id, sub1A.id, {
+    file_name: "ACORD25_ACME_Electrical.pdf",
+    insured_extracted_name: "ACME Electrical Solutions LLC",
+    gl_occurrence_extracted: 2000000,
+    gl_aggregate_extracted: 4000000,
+    auto_combined_single_limit_extracted: 1000000,
+    workers_comp_statutory_extracted: true,
+    policy_expiration_date_extracted: "2026-09-15",
+    gl_products_completed_extracted: 2000000,
+    umbrella_limit_extracted: 5000000,
+    employers_liability_accident_extracted: 1000000,
+    employers_liability_disease_person_extracted: 1000000,
+    employers_liability_disease_limit_extracted: 1000000,
+    professional_liability_extracted: 2000000,
+    pollution_liability_extracted: 0,
+  });
+
+  const sub1B = await createSubcontractor(p1.id, {
+    company_name: "Apex Plumbing & Piping Co.",
+    trade: "Plumbing",
+    contract_value: 240000,
+  });
+  await submitCoiRecord(p1.id, sub1B.id, {
+    file_name: "Apex_Plumbing_COI_2026.pdf",
+    insured_extracted_name: "Apex Plumbing & Piping Co.",
+    gl_occurrence_extracted: 1000000,
+    gl_aggregate_extracted: 2000000,
+    auto_combined_single_limit_extracted: 500000,
+    workers_comp_statutory_extracted: false,
+    policy_expiration_date_extracted: "2026-11-20",
+    gl_products_completed_extracted: 2000000,
+    umbrella_limit_extracted: 5000000,
+    employers_liability_accident_extracted: 1000000,
+    employers_liability_disease_person_extracted: 1000000,
+    employers_liability_disease_limit_extracted: 1000000,
+    professional_liability_extracted: 2000000,
+    pollution_liability_extracted: 2000000,
+  });
+
+  const sub1C = await createSubcontractor(p1.id, {
+    company_name: "Titan Structural Steel Corp",
+    trade: "Other Trades",
+    contract_value: 710000,
+  });
+  await submitCoiRecord(p1.id, sub1C.id, {
+    file_name: "titan_steel_insurance_acord.png",
+    insured_extracted_name: "Titan Structural Steel Corp",
+    gl_occurrence_extracted: 5000000,
+    gl_aggregate_extracted: 10000000,
+    auto_combined_single_limit_extracted: 2000000,
+    workers_comp_statutory_extracted: true,
+    policy_expiration_date_extracted: "2026-05-10",
+    gl_products_completed_extracted: 2000000,
+    umbrella_limit_extracted: 1000000,
+    employers_liability_accident_extracted: 1000000,
+    employers_liability_disease_person_extracted: 1000000,
+    employers_liability_disease_limit_extracted: 1000000,
+    professional_liability_extracted: 0,
+    pollution_liability_extracted: 0,
+  });
+
+  const p2 = await createProject({
+    name: "Evergreen Business Park",
+    number: "P-2026-02",
+    target_completion_date: "2027-06-15",
+    requirements: {
+      gl_occurrence: 1000000,
+      gl_aggregate: 2000000,
+      auto_limit: 1000000,
+      workers_comp: true,
+      warn_days_out: 30,
+      gl_products_completed: 2000000,
+      umbrella_limit: 1000000,
+      employers_liability_accident: 1000000,
+      employers_liability_disease_person: 1000000,
+      employers_liability_disease_limit: 1000000,
+    },
+  });
+
+  const sub2A = await createSubcontractor(p2.id, {
+    company_name: "Solid Ground Concrete Works",
+    trade: "Concrete (Standard)",
+    contract_value: 190000,
+  });
+  await submitCoiRecord(p2.id, sub2A.id, {
+    file_name: "solid_ground_concrete_acord25.pdf",
+    insured_extracted_name: "Solid Ground Concrete Works",
+    gl_occurrence_extracted: 2000000,
+    gl_aggregate_extracted: 4000000,
+    auto_combined_single_limit_extracted: 1000000,
+    workers_comp_statutory_extracted: true,
+    policy_expiration_date_extracted: "2027-01-15",
+    gl_products_completed_extracted: 2000000,
+    umbrella_limit_extracted: 5000000,
+    employers_liability_accident_extracted: 1000000,
+    employers_liability_disease_person_extracted: 1000000,
+    employers_liability_disease_limit_extracted: 1000000,
+    professional_liability_extracted: 0,
+    pollution_liability_extracted: 2000000,
+  });
+
+  const sub2B = await createSubcontractor(p2.id, {
+    company_name: "Vortex Mechanical Services",
+    trade: "HVAC",
+    contract_value: 125000,
+  });
+  await submitCoiRecord(p2.id, sub2B.id, {
+    file_name: "vortex_hvac_coi_draft.pdf",
+    insured_extracted_name: "Vortex Mechanical LLC",
+    gl_occurrence_extracted: 1000000,
+    gl_aggregate_extracted: 1500000,
+    auto_combined_single_limit_extracted: 1000000,
+    workers_comp_statutory_extracted: true,
+    policy_expiration_date_extracted: "2026-11-01",
+    gl_products_completed_extracted: 1500000,
+    umbrella_limit_extracted: 1000000,
+    employers_liability_accident_extracted: 1000000,
+    employers_liability_disease_person_extracted: 1000000,
+    employers_liability_disease_limit_extracted: 1000000,
+    professional_liability_extracted: 2000000,
+    pollution_liability_extracted: 2000000,
+  });
+  await updateSubcontractor(p2.id, sub2B.id, {
+    manual_override: true,
+    compliance_status: "Compliant",
+    override_notes:
+      "Approved via Exception: Risk Committee reviewed low risk installation height. Exemption granted by Project Manager.",
+  });
+
+  const sub2C = await createSubcontractor(p2.id, {
+    company_name: "ACME Electrical Solutions, Inc.",
+    trade: "Electrical",
+    contract_value: 210000,
+  });
+  await submitCoiRecord(p2.id, sub2C.id, {
+    file_name: "ACME_Electrical_Evergreen_2026.pdf",
+    insured_extracted_name: "ACME Electrical Solutions Inc",
+    gl_occurrence_extracted: 2000000,
+    gl_aggregate_extracted: 4000000,
+    auto_combined_single_limit_extracted: 1000000,
+    workers_comp_statutory_extracted: true,
+    policy_expiration_date_extracted: "2027-03-01",
+    gl_products_completed_extracted: 2000000,
+    umbrella_limit_extracted: 5000000,
+    employers_liability_accident_extracted: 1000000,
+    employers_liability_disease_person_extracted: 1000000,
+    employers_liability_disease_limit_extracted: 1000000,
+    professional_liability_extracted: 2000000,
+    pollution_liability_extracted: 0,
+  });
+
+  const p3 = await createProject({
+    name: "Summit Heights Canopy",
+    number: "P-2026-03",
+    target_completion_date: "2026-10-01",
+    requirements: {
+      gl_occurrence: 3000000,
+      gl_aggregate: 5000005,
+      auto_limit: 2000000,
+      workers_comp: true,
+      warn_days_out: 90,
+      gl_products_completed: 2000000,
+      umbrella_limit: 1000000,
+      employers_liability_accident: 1000000,
+      employers_liability_disease_person: 1000000,
+      employers_liability_disease_limit: 1000000,
+    },
+  });
+
+  await createSubcontractor(p3.id, {
+    company_name: "Summit Roofing Specialists",
+    trade: "Roofing",
+    contract_value: 145000,
+  });
+  await createSubcontractor(p3.id, {
+    company_name: "Acme Electrical Solutions",
+    trade: "Electrical",
+    contract_value: 175000,
+  });
+
+  const p4 = await createProject({
+    name: "Harbor Point Renovation",
+    number: "P-2025-11",
+    target_completion_date: "2026-03-30",
+    archived: true,
+    requirements: {
+      gl_occurrence: 2000000,
+      gl_aggregate: 4000000,
+      auto_limit: 1000000,
+      workers_comp: true,
+      warn_days_out: 60,
+      gl_products_completed: 2000000,
+      umbrella_limit: 1000000,
+      employers_liability_accident: 1000000,
+      employers_liability_disease_person: 1000000,
+      employers_liability_disease_limit: 1000000,
+    },
+  });
+  const sub4A = await createSubcontractor(p4.id, {
+    company_name: "ACME Electrical Solutions LLC",
+    trade: "Electrical",
+    contract_value: 260000,
+  });
+  await submitCoiRecord(p4.id, sub4A.id, {
+    file_name: "ACME_Electrical_HarborPoint_2025.pdf",
+    insured_extracted_name: "ACME Electrical Solutions LLC",
+    gl_occurrence_extracted: 2000000,
+    gl_aggregate_extracted: 4000000,
+    auto_combined_single_limit_extracted: 1000000,
+    workers_comp_statutory_extracted: true,
+    policy_expiration_date_extracted: "2026-04-30",
+    gl_products_completed_extracted: 2000000,
+    umbrella_limit_extracted: 5000000,
+    employers_liability_accident_extracted: 1000000,
+    employers_liability_disease_person_extracted: 1000000,
+    employers_liability_disease_limit_extracted: 1000000,
+    professional_liability_extracted: 2000000,
+    pollution_liability_extracted: 0,
+  });
 }

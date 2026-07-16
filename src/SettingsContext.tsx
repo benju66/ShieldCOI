@@ -1,34 +1,54 @@
-import React, { createContext, useCallback, useContext, useState } from "react";
-import { AppSettings, getSettings, saveSettings } from "./settingsService";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { RefreshCw } from "lucide-react";
+import { AppSettings, fetchSettings, saveSettings } from "./settingsService";
 
 /**
- * App-wide settings, loaded once and shared via context.
+ * App-wide settings, loaded once from Supabase and shared via context.
  *
- * Components read settings from here (synchronously) instead of calling
- * settingsService.getSettings() ad hoc during render. That decouples them from
- * the storage backend: when settings move from localStorage to Supabase, only
- * this provider's load/save changes — the consumers don't. Changing settings
- * updates the context, so the app reacts live.
+ * Components read settings synchronously from here instead of fetching ad hoc.
+ * The provider blocks rendering its children until the initial load completes,
+ * so consumers always see a fully-loaded `settings` object.
  */
 interface SettingsContextValue {
   settings: AppSettings;
-  /** Persist and apply new settings (updates the context so the app re-renders). */
+  /** Persist and apply new settings (optimistic — updates the context immediately). */
   updateSettings: (next: AppSettings) => void;
-  /** Re-read settings from the source (e.g. after a data import). */
+  /** Re-read settings from the backend (e.g. after a data import). */
   reloadSettings: () => void;
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useState<AppSettings>(() => getSettings());
+  const [settings, setSettings] = useState<AppSettings | null>(null);
 
-  const updateSettings = useCallback((next: AppSettings) => {
-    saveSettings(next);
-    setSettings(next);
+  useEffect(() => {
+    let active = true;
+    fetchSettings().then((s) => {
+      if (active) setSettings(s);
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
-  const reloadSettings = useCallback(() => setSettings(getSettings()), []);
+  const updateSettings = useCallback((next: AppSettings) => {
+    setSettings(next); // optimistic
+    void saveSettings(next);
+  }, []);
+
+  const reloadSettings = useCallback(() => {
+    void fetchSettings().then(setSettings);
+  }, []);
+
+  if (!settings) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center text-slate-800">
+        <RefreshCw className="h-8 w-8 text-blue-600 animate-spin mb-4" />
+        <span className="text-xs text-slate-500">Loading your workspace…</span>
+      </div>
+    );
+  }
 
   return (
     <SettingsContext.Provider value={{ settings, updateSettings, reloadSettings }}>

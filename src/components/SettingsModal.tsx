@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Sliders, X, Plus, Trash2, Download, Upload, Database, AlertTriangle } from "lucide-react";
-import { getSettings, todayISO } from "../settingsService";
+import { fetchSettings, todayISO } from "../settingsService";
 import { useSettings } from "../SettingsContext";
 import { TradeRule, isNonEmptyRule } from "../tradeRules";
 import { ProjectRequirements } from "../types";
@@ -164,9 +164,9 @@ export default function SettingsModal({
     onClose();
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     try {
-      const json = exportAllData();
+      const json = await exportAllData();
       const blob = new Blob([json], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -195,10 +195,10 @@ export default function SettingsModal({
     setBusy("import");
     try {
       const text = await file.text();
-      importAllData(text);
+      await importAllData(text);
       reloadSettings(); // sync the app-wide settings context to the imported data
       // Re-hydrate this modal's editing state from the imported settings.
-      const s = getSettings();
+      const s = await fetchSettings();
       setDefaultReqs({ ...s.default_requirements });
       setTrades(s.trades);
       setTradeRules(JSON.parse(JSON.stringify(s.trade_rules || {})));
@@ -234,7 +234,7 @@ export default function SettingsModal({
     }
     setBusy("clear");
     try {
-      clearAllData();
+      await clearAllData();
       await onDataReloaded();
     } finally {
       setBusy(null);
