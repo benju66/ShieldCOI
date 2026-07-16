@@ -28,7 +28,8 @@ import {
   X,
   HelpCircle,
   Archive,
-  ArchiveRestore
+  ArchiveRestore,
+  LogOut
 } from "lucide-react";
 
 import UserGuideModal from "./components/UserGuideModal";
@@ -64,6 +65,7 @@ import ExecutivePrintReport from "./components/ExecutivePrintReport";
 import { formatUSD } from "./utils/currency";
 import { todayISO } from "./settingsService";
 import { useSettings } from "./SettingsContext";
+import { useAuth } from "./AuthContext";
 
 export default function App() {
   // DB States
@@ -85,6 +87,7 @@ export default function App() {
   // Settings come from context; the evaluation date derives from them and updates live.
   const { settings } = useSettings();
   const evalDate = settings.evaluation_date || todayISO();
+  const { user, signOut } = useAuth();
 
   // History state
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
@@ -406,12 +409,20 @@ export default function App() {
             <span>Settings</span>
           </button>
 
-          <div id="local-mode-panel" className="bg-slate-50 border border-slate-200 pl-2 pr-2.5 py-1 rounded-md flex items-center space-x-2 text-[11px]">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-            <div className="flex flex-col leading-tight">
-              <span className="text-slate-500 text-[9px] font-semibold uppercase tracking-wider">Local Demo</span>
-              <strong className="text-slate-800 font-medium text-[10.5px]">Saved in this browser</strong>
-            </div>
+          <div className="flex items-center space-x-2 pl-1 border-l border-slate-200">
+            <span className="text-[11px] text-slate-500 hidden sm:inline max-w-[160px] truncate" title={user?.email || ""}>
+              {user?.email}
+            </span>
+            <button
+              onClick={() => signOut()}
+              id="sign-out-button"
+              type="button"
+              title="Sign out"
+              className="flex items-center space-x-1 px-2.5 py-1 border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 rounded-md text-[11px] font-semibold shadow-xs cursor-pointer transition-all"
+            >
+              <LogOut className="h-3 w-3 text-slate-400" />
+              <span>Sign out</span>
+            </button>
           </div>
         </div>
       </header>
