@@ -71,6 +71,10 @@ export interface Subcontractor {
   waiver_reason_type?: "Low Contract Value" | "Low-Risk Scope" | "Executive Discretion" | "Temporary Extension" | null;
   waiver_authorized_by?: string | null;
   waiver_expiration_date?: string | null;
+  // Optional vendor contact — used by the scheduled reminder engine's future
+  // "email the vendor directly" channel (absent until captured).
+  contact_email?: string | null;
+  contact_name?: string | null;
 }
 
 export interface CoiRecord {

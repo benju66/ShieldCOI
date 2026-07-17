@@ -34,9 +34,12 @@ engine (`complianceEngine.ts`, `tradeRules.ts`) is pure and untouched.
   internals to call Supabase. `dbService` is already async so call sites barely
   change. Migrate existing data using the JSON **export/import** already in
   Settings → Data Management (export from localStorage, import into the org).
-- **Phase D — Reminders (later).** A Supabase Edge Function on a schedule finds
-  COIs expiring within the project's warning window and emails the vendor
-  (Resend/Postmark). This is the recurring-value payoff.
+- **Phase D — Reminders (done).** A Supabase Edge Function
+  (`supabase/functions/send-expiry-reminders`) runs on a daily `pg_cron`
+  schedule, finds each subcontractor's latest COI, and flags the ones expiring
+  soon (or already lapsed) as **in-app notifications** for the team. Cadence and
+  channels are configurable per org (Settings → Automated reminders). Email is a
+  built-but-off channel — see "Reminder engine" below.
 
 ## Environment variables
 
@@ -50,7 +53,14 @@ VITE_SUPABASE_ANON_KEY="<anon/publishable key>"
 Server-side only (never in the browser; used by edge functions / admin tasks):
 
 ```
-SUPABASE_SERVICE_ROLE_KEY="<service role key>"   # secret
+SUPABASE_SERVICE_ROLE_KEY="<service role key>"   # secret; auto-injected into edge functions
+```
+
+Reminder email (optional — only needed to turn the email channel on, see below):
+
+```
+RESEND_API_KEY="<resend api key>"                # supabase secrets set …
+REMINDER_FROM_EMAIL="alerts@yourdomain.com"      # a verified sender
 ```
 
 ## Schema
@@ -61,6 +71,60 @@ Queryable fields are real columns; nested/variable data (requirements,
 custom_requirements, extracted custom coverages, validation_errors) is JSONB to
 mirror the current TS types. RLS on every table restricts access to the caller's
 own `org_id`.
+
+## Reminder engine (Phase D)
+
+`supabase/functions/send-expiry-reminders` + migration `0004_reminders.sql`.
+
+**What it does.** Once a day it iterates every org (using the service-role key,
+so it bypasses RLS — cron is not a signed-in user). For each subcontractor on an
+**active** project it takes the latest COI on file and works out how many days
+until `policy_expiration_date_extracted`. It fires the single *tightest*
+reminder step the cert has entered — e.g. with thresholds `[30, 7]` a cert moves
+`30` → `7` → `expired` as it ages, one notice per step. Each `(cert, step,
+channel)` is recorded in `coi_reminder_log` (unique index), so the daily run is
+**idempotent** — re-running never double-sends, and a renewed cert (a new COI
+row) starts a fresh set of steps.
+
+**Configurable per org** (Settings → Automated reminders, stored in
+`org_settings.reminder_settings`): on/off, the day thresholds, whether to also
+notify on lapse, and the channels (`notify_team`, `email_enabled`,
+`notify_vendor`).
+
+**Channels.**
+- `in_app` (on by default) — writes a `notifications` row for the team. This is
+  the whole v1: no external mail, no third-party account.
+- `email_team` / `email_vendor` (off by default) — only send when the org has
+  `email_enabled` **and** the function has a provider secret set. Vendor email
+  also needs `subcontractors.contact_email` (column added, capture UI is a later
+  step). Until a provider is configured these are saved but skipped (counted as
+  `emails_skipped_no_provider`), so nothing leaks out prematurely.
+
+**Schedule (live).** A `pg_cron` job `coi-expiry-reminders-daily` runs at
+`0 13 * * *` (13:00 UTC) and `POST`s the function via `pg_net`, authenticating
+with the **publishable** key (public — safe to embed). Manage it with:
+
+```sql
+-- inspect / history
+select * from cron.job where jobname = 'coi-expiry-reminders-daily';
+select * from cron.job_run_details order by start_time desc limit 10;
+-- pause / resume
+update cron.job set active = false where jobname = 'coi-expiry-reminders-daily';
+-- remove
+select cron.unschedule('coi-expiry-reminders-daily');
+```
+
+Debug affordances (POST body or query): `{"dryRun": true}` reports what it
+*would* do without writing; `{"today": "YYYY-MM-DD"}` overrides the reference
+date (used to test the sample data against future windows).
+
+**Turning email on later.**
+1. Create a provider account (Resend) and verify a sending domain.
+2. `supabase secrets set RESEND_API_KEY=… REMINDER_FROM_EMAIL=alerts@yourdomain.com`
+   (dashboard → Edge Functions → Secrets, or the CLI).
+3. In Settings → Automated reminders, enable **Send email** (and optionally
+   *Email the vendor directly* once contact emails are captured).
+4. Test with `{"dryRun": false}` against your own address before broad send.
 
 ## Open items
 

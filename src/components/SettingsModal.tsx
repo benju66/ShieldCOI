@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Sliders, X, Plus, Trash2, Download, Upload, Database, AlertTriangle } from "lucide-react";
-import { fetchSettings, todayISO } from "../settingsService";
+import { Sliders, X, Plus, Trash2, Download, Upload, Database, AlertTriangle, Bell } from "lucide-react";
+import { fetchSettings, todayISO, ReminderSettings, DEFAULT_REMINDER_SETTINGS } from "../settingsService";
 import { useSettings } from "../SettingsContext";
 import { TradeRule, isNonEmptyRule } from "../tradeRules";
 import { ProjectRequirements } from "../types";
@@ -35,6 +35,7 @@ export default function SettingsModal({
   const [insufficientTemplate, setInsufficientTemplate] = useState("");
   const [evalMode, setEvalMode] = useState<"today" | "fixed">("today");
   const [evalDateOverride, setEvalDateOverride] = useState(todayISO());
+  const [reminders, setReminders] = useState<ReminderSettings>(() => ({ ...DEFAULT_REMINDER_SETTINGS }));
   const [saving, setSaving] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -50,6 +51,7 @@ export default function SettingsModal({
       setInsufficientTemplate(s.email_templates.insufficient_template);
       setEvalMode(s.evaluation_date ? "fixed" : "today");
       setEvalDateOverride(s.evaluation_date || todayISO());
+      setReminders({ ...DEFAULT_REMINDER_SETTINGS, ...s.reminder_settings });
       setNewTrade("");
       setNewRuleTrade("");
     }
@@ -121,6 +123,17 @@ export default function SettingsModal({
   const setReq = (field: keyof ProjectRequirements, value: number | boolean) =>
     setDefaultReqs((prev) => ({ ...prev, [field]: value }));
 
+  // --- Reminder cadence ---
+  const REMINDER_DAY_OPTIONS = [7, 14, 30, 60, 90];
+  const toggleReminderDay = (day: number) =>
+    setReminders((prev) => {
+      const has = prev.days_before.includes(day);
+      const next = has ? prev.days_before.filter((d) => d !== day) : [...prev.days_before, day];
+      return { ...prev, days_before: next.sort((a, b) => b - a) };
+    });
+  const setReminderField = <K extends keyof ReminderSettings>(field: K, value: ReminderSettings[K]) =>
+    setReminders((prev) => ({ ...prev, [field]: value }));
+
   const handleSave = () => {
     // Trim, drop blanks, de-dupe (case-insensitive, keep first occurrence).
     const seen = new Set<string>();
@@ -159,6 +172,10 @@ export default function SettingsModal({
         insufficient_template: insufficientTemplate,
       },
       evaluation_date: evalMode === "fixed" && evalDateOverride ? evalDateOverride : null,
+      reminder_settings: {
+        ...reminders,
+        days_before: [...reminders.days_before].sort((a, b) => b - a),
+      },
     });
     setSaving(false);
     onClose();
@@ -204,6 +221,7 @@ export default function SettingsModal({
       setTradeRules(JSON.parse(JSON.stringify(s.trade_rules || {})));
       setExpiredTemplate(s.email_templates.expired_template);
       setInsufficientTemplate(s.email_templates.insufficient_template);
+      setReminders({ ...DEFAULT_REMINDER_SETTINGS, ...s.reminder_settings });
       await onDataReloaded();
       alert("Import complete.");
     } catch (err: any) {
@@ -596,6 +614,122 @@ export default function SettingsModal({
                 className="ml-6 text-xs font-mono bg-white border border-slate-200 focus:border-blue-500 focus:outline-none rounded p-1.5 text-slate-800"
               />
             )}
+          </section>
+
+          {/* Automated reminders */}
+          <section className="space-y-2.5 border-t border-slate-200 pt-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider flex items-center gap-1">
+                  <Bell className="h-3 w-3" />
+                  Automated reminders
+                </span>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  A daily check flags certificates that are expiring soon (or have lapsed) so nothing slips through.
+                </p>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer shrink-0 pt-0.5">
+                <input
+                  type="checkbox"
+                  checked={reminders.enabled}
+                  onChange={(e) => setReminderField("enabled", e.target.checked)}
+                  className="cursor-pointer"
+                />
+                <span className="text-[11px] font-bold text-slate-800">{reminders.enabled ? "On" : "Off"}</span>
+              </label>
+            </div>
+
+            <div className={reminders.enabled ? "space-y-3" : "space-y-3 opacity-40 pointer-events-none"}>
+              {/* Day thresholds */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-1.5">Remind this many days before expiry</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {REMINDER_DAY_OPTIONS.map((day) => {
+                    const active = reminders.days_before.includes(day);
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => toggleReminderDay(day)}
+                        className={`px-2.5 py-1 rounded text-[11px] font-bold border cursor-pointer transition-colors ${
+                          active
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        {day}d
+                      </button>
+                    );
+                  })}
+                </div>
+                {reminders.days_before.length === 0 && (
+                  <p className="text-[9.5px] text-amber-600 mt-1">
+                    No advance reminders selected — only lapse notices (if enabled below) will fire.
+                  </p>
+                )}
+              </div>
+
+              {/* Also on expiry */}
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={reminders.also_on_expiry}
+                  onChange={(e) => setReminderField("also_on_expiry", e.target.checked)}
+                  className="cursor-pointer"
+                />
+                <span className="text-[11px] text-slate-800 font-semibold">Also send a notice when a certificate lapses</span>
+              </label>
+
+              {/* Channels */}
+              <div className="border border-slate-200 rounded-lg p-2.5 bg-slate-50/40 space-y-2">
+                <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Delivery</span>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={reminders.notify_team}
+                    onChange={(e) => setReminderField("notify_team", e.target.checked)}
+                    className="cursor-pointer"
+                  />
+                  <span className="text-[11px] text-slate-800 font-semibold">
+                    Notify your team <span className="font-normal text-slate-500">(in-app alerts)</span>
+                  </span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={reminders.email_enabled}
+                    onChange={(e) => setReminderField("email_enabled", e.target.checked)}
+                    className="cursor-pointer"
+                  />
+                  <span className="text-[11px] text-slate-800 font-semibold">
+                    Send email <span className="font-normal text-slate-500">(team &amp; / or vendors)</span>
+                  </span>
+                </label>
+
+                {reminders.email_enabled && (
+                  <label className="flex items-center gap-2 cursor-pointer ml-5">
+                    <input
+                      type="checkbox"
+                      checked={reminders.notify_vendor}
+                      onChange={(e) => setReminderField("notify_vendor", e.target.checked)}
+                      className="cursor-pointer"
+                    />
+                    <span className="text-[11px] text-slate-800">
+                      Email the vendor directly <span className="text-slate-500">(where a contact email is on file)</span>
+                    </span>
+                  </label>
+                )}
+
+                <p className="text-[9.5px] text-slate-500 leading-normal flex items-start gap-1 pt-0.5">
+                  <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" />
+                  <span>
+                    In-app alerts work now. Email stays off until an email provider is connected server-side — until
+                    then these email options are saved but nothing is sent.
+                  </span>
+                </p>
+              </div>
+            </div>
           </section>
 
           {/* Data Management */}

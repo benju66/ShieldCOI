@@ -8,6 +8,24 @@ import { TradeRule } from "./tradeRules";
 import { ProjectRequirements } from "./types";
 import { supabase, currentOrgId } from "./supabaseClient";
 
+/**
+ * Configurable cadence + channels for the scheduled COI-expiration reminder
+ * engine (a daily edge function). `days_before` are the day thresholds to remind
+ * ahead of expiry (a stepped cadence — a cert is notified once as it crosses
+ * each tighter window); `also_on_expiry` adds one notice when it lapses. In-app
+ * notices go to the team whenever `notify_team` is on; email is a separate,
+ * off-by-default channel gated by `email_enabled` (and needs a provider secret
+ * configured server-side before it actually sends).
+ */
+export interface ReminderSettings {
+  enabled: boolean;
+  days_before: number[];
+  also_on_expiry: boolean;
+  notify_team: boolean;
+  notify_vendor: boolean;
+  email_enabled: boolean;
+}
+
 export interface AppSettings {
   /** Org "house minimum" insurance requirements pre-filled into new projects. */
   default_requirements: ProjectRequirements;
@@ -30,6 +48,8 @@ export interface AppSettings {
    * fixed date (useful for demos/testing against the sample data).
    */
   evaluation_date: string | null;
+  /** Scheduled COI-expiration reminder cadence + channels. */
+  reminder_settings: ReminderSettings;
 }
 
 /** The built-in Trade Scope Package labels offered out of the box. */
@@ -70,6 +90,16 @@ We have reviewed your Certificate of Insurance (COI) uploaded for [Project Name]
 Thank you,
 Project Management Team`;
 
+/** Built-in reminder cadence: stepped 30/7-days-out plus an expiry notice, in-app to the team. */
+export const DEFAULT_REMINDER_SETTINGS: ReminderSettings = {
+  enabled: true,
+  days_before: [30, 7],
+  also_on_expiry: true,
+  notify_team: true,
+  notify_vendor: false,
+  email_enabled: false,
+};
+
 /** Built-in "house minimum" requirements for a new project. */
 export const DEFAULT_PROJECT_REQUIREMENTS: ProjectRequirements = {
   gl_occurrence: 2_000_000,
@@ -95,7 +125,24 @@ export const DEFAULT_SETTINGS: AppSettings = {
     insufficient_template: DEFAULT_INSUFFICIENT_TEMPLATE,
   },
   evaluation_date: null,
+  reminder_settings: DEFAULT_REMINDER_SETTINGS,
 };
+
+/** Normalize a partial reminder-settings object over the built-in defaults. */
+function mergeReminderSettings(p: Partial<ReminderSettings> | null | undefined): ReminderSettings {
+  const r = p || {};
+  const days = Array.isArray(r.days_before)
+    ? r.days_before.map(Number).filter((n) => Number.isFinite(n) && n > 0)
+    : DEFAULT_REMINDER_SETTINGS.days_before;
+  return {
+    enabled: r.enabled !== false,
+    days_before: days.length ? days : DEFAULT_REMINDER_SETTINGS.days_before,
+    also_on_expiry: r.also_on_expiry !== false,
+    notify_team: r.notify_team !== false,
+    notify_vendor: r.notify_vendor === true,
+    email_enabled: r.email_enabled === true,
+  };
+}
 
 /** Normalize a partial settings object (from storage) over the built-in defaults. */
 function mergeSettings(parsed: Partial<AppSettings> | null | undefined): AppSettings {
@@ -109,6 +156,7 @@ function mergeSettings(parsed: Partial<AppSettings> | null | undefined): AppSett
       insufficient_template: p.email_templates?.insufficient_template ?? DEFAULT_INSUFFICIENT_TEMPLATE,
     },
     evaluation_date: typeof p.evaluation_date === "string" ? p.evaluation_date : null,
+    reminder_settings: mergeReminderSettings(p.reminder_settings),
   };
 }
 
@@ -116,7 +164,7 @@ function mergeSettings(parsed: Partial<AppSettings> | null | undefined): AppSett
 export async function fetchSettings(): Promise<AppSettings> {
   const { data, error } = await supabase
     .from("org_settings")
-    .select("default_requirements, trades, trade_rules, email_templates, evaluation_date")
+    .select("default_requirements, trades, trade_rules, email_templates, evaluation_date, reminder_settings")
     .maybeSingle();
   if (error) {
     console.error("Failed to load settings:", error.message);
@@ -136,6 +184,7 @@ export async function saveSettings(settings: AppSettings): Promise<void> {
       trade_rules: settings.trade_rules,
       email_templates: settings.email_templates,
       evaluation_date: settings.evaluation_date,
+      reminder_settings: settings.reminder_settings,
       updated_at: new Date().toISOString(),
     })
     .eq("org_id", orgId);

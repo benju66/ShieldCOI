@@ -63,6 +63,8 @@ function rowToSub(r: any): Subcontractor {
     waiver_reason_type: r.waiver_reason_type ?? null,
     waiver_authorized_by: r.waiver_authorized_by ?? null,
     waiver_expiration_date: r.waiver_expiration_date ?? null,
+    contact_email: r.contact_email ?? null,
+    contact_name: r.contact_name ?? null,
   };
 }
 
@@ -80,6 +82,8 @@ function subToRow(s: Partial<Subcontractor>): Record<string, any> {
     "waiver_reason_type",
     "waiver_authorized_by",
     "waiver_expiration_date",
+    "contact_email",
+    "contact_name",
   ];
   for (const k of keys) if (s[k] !== undefined) row[k] = s[k];
   return row;
