@@ -54,7 +54,7 @@ import { Project, Subcontractor, Notification, CoiRecord } from "./types";
 import DashboardStats from "./components/DashboardStats";
 import NeedsAttention from "./components/NeedsAttention";
 import ProjectForm from "./components/ProjectForm";
-import SubcontractorModal from "./components/SubcontractorModal";
+import SubcontractorModal, { NewSubcontractor } from "./components/SubcontractorModal";
 import CoiUploadZone from "./components/CoiUploadZone";
 import VerificationDrawer from "./components/VerificationDrawer";
 import NotificationList from "./components/NotificationList";
@@ -265,13 +265,15 @@ export default function App() {
   };
 
   // Enrolling a subcontractor
-  const handleAddSubcontractor = async (companyName: string, trade: string, contractValue: number, vendorType: "Subcontractor" | "Supplier") => {
+  const handleAddSubcontractor = async (sub: NewSubcontractor) => {
     if (!selectedProject) return;
     await createSubcontractor(selectedProject.id, {
-      company_name: companyName,
-      trade,
-      contract_value: contractValue,
-      vendor_type: vendorType,
+      company_name: sub.companyName,
+      trade: sub.trade,
+      contract_value: sub.contractValue,
+      vendor_type: sub.vendorType,
+      contact_name: sub.contactName ?? null,
+      contact_email: sub.contactEmail ?? null,
     });
     await loadAllData();
   };

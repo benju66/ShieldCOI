@@ -3,11 +3,20 @@ import { UserPlus, X } from "lucide-react";
 import CurrencyInput from "./CurrencyInput";
 import { useSettings } from "../SettingsContext";
 
+export interface NewSubcontractor {
+  companyName: string;
+  trade: string;
+  contractValue: number;
+  vendorType: "Subcontractor" | "Supplier";
+  contactName?: string;
+  contactEmail?: string;
+}
+
 interface SubcontractorModalProps {
   isOpen: boolean;
   onClose: () => void;
   projectName: string;
-  onAdd: (companyName: string, trade: string, contractValue: number, vendorType: "Subcontractor" | "Supplier") => Promise<void>;
+  onAdd: (sub: NewSubcontractor) => Promise<void>;
 }
 
 export default function SubcontractorModal({ isOpen, onClose, projectName, onAdd }: SubcontractorModalProps) {
@@ -17,6 +26,8 @@ export default function SubcontractorModal({ isOpen, onClose, projectName, onAdd
   const [trade, setTrade] = useState("");
   const [contractValue, setContractValue] = useState(150000);
   const [vendorType, setVendorType] = useState<"Subcontractor" | "Supplier">("Subcontractor");
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   // Load the configurable Trade Scope Package list when the modal opens.
@@ -39,11 +50,20 @@ export default function SubcontractorModal({ isOpen, onClose, projectName, onAdd
 
     try {
       setSubmitting(true);
-      await onAdd(companyName, trade, Number(contractValue), vendorType);
+      await onAdd({
+        companyName,
+        trade,
+        contractValue: Number(contractValue),
+        vendorType,
+        contactName: contactName.trim() || undefined,
+        contactEmail: contactEmail.trim() || undefined,
+      });
       setCompanyName("");
       setTrade(trades[0] || "");
       setContractValue(150000);
       setVendorType("Subcontractor");
+      setContactName("");
+      setContactEmail("");
       onClose();
     } catch (err) {
       alert("Failed to enroll subcontractor.");
@@ -144,6 +164,42 @@ export default function SubcontractorModal({ isOpen, onClose, projectName, onAdd
               placeholder="e.g. $150,000"
               className="w-full text-xs font-mono bg-slate-50 border border-slate-200 focus:bg-white focus:border-blue-500 focus:outline-none rounded p-2 text-slate-800"
             />
+          </div>
+
+          {/* Vendor contact (optional) — used for expiration reminder emails */}
+          <div className="border-t border-slate-200 pt-3 space-y-3">
+            <p className="text-[10px] text-slate-500">
+              Vendor contact <span className="text-slate-400">(optional)</span> — where COI-expiration reminders are
+              emailed when vendor reminders are enabled.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="subcontractor-contact-name" className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Contact name
+                </label>
+                <input
+                  id="subcontractor-contact-name"
+                  type="text"
+                  value={contactName}
+                  onChange={(e) => setContactName(e.target.value)}
+                  placeholder="e.g. Dana Reyes"
+                  className="w-full text-xs bg-slate-50 border border-slate-200 focus:bg-white focus:border-blue-500 focus:outline-none rounded p-2 text-slate-800"
+                />
+              </div>
+              <div>
+                <label htmlFor="subcontractor-contact-email" className="block text-[11px] font-bold text-slate-700 mb-1">
+                  Contact email
+                </label>
+                <input
+                  id="subcontractor-contact-email"
+                  type="email"
+                  value={contactEmail}
+                  onChange={(e) => setContactEmail(e.target.value)}
+                  placeholder="e.g. dana@vendor.com"
+                  className="w-full text-xs bg-slate-50 border border-slate-200 focus:bg-white focus:border-blue-500 focus:outline-none rounded p-2 text-slate-800"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Footer Actions */}

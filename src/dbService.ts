@@ -188,6 +188,8 @@ export async function createSubcontractor(
       manual_override: false,
       override_notes: "",
       vendor_type: sub.vendor_type || "Subcontractor",
+      contact_name: sub.contact_name ?? null,
+      contact_email: sub.contact_email ?? null,
     })
     .select("*")
     .single();
