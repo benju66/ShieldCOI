@@ -66,6 +66,7 @@ import { formatUSD } from "./utils/currency";
 import { todayISO } from "./settingsService";
 import { useSettings } from "./SettingsContext";
 import { useAuth } from "./AuthContext";
+import { getOrg, getMyProfile, displayNameFor, MyProfile } from "./accountService";
 
 export default function App() {
   // DB States
@@ -88,6 +89,22 @@ export default function App() {
   const { settings } = useSettings();
   const evalDate = settings.evaluation_date || todayISO();
   const { user, signOut } = useAuth();
+
+  // Header identity (org name + this user's profile), loaded once after sign-in.
+  const [orgName, setOrgName] = useState("");
+  const [myProfile, setMyProfile] = useState<MyProfile | null>(null);
+  const loadIdentity = async () => {
+    try {
+      const [org, prof] = await Promise.all([getOrg(), getMyProfile()]);
+      setOrgName(org?.name ?? "");
+      setMyProfile(prof);
+    } catch (err) {
+      console.error("Failed to load organization / profile:", err);
+    }
+  };
+  useEffect(() => {
+    loadIdentity();
+  }, []);
 
   // History state
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
@@ -409,9 +426,14 @@ export default function App() {
           </button>
 
           <div className="flex items-center space-x-2 pl-1 border-l border-slate-200">
-            <span className="text-[11px] text-slate-500 hidden sm:inline max-w-[160px] truncate" title={user?.email || ""}>
-              {user?.email}
-            </span>
+            <div className="hidden sm:flex flex-col items-end leading-tight max-w-[180px]">
+              <span className="text-[11px] font-semibold text-slate-700 truncate max-w-[180px]" title={myProfile?.email || user?.email || ""}>
+                {displayNameFor(myProfile) || user?.email}
+              </span>
+              {orgName && (
+                <span className="text-[9px] text-slate-400 truncate max-w-[180px]">{orgName}</span>
+              )}
+            </div>
             <button
               onClick={() => signOut()}
               id="sign-out-button"
@@ -1018,6 +1040,7 @@ export default function App() {
         usedTrades={Array.from(new Set(allSubcontractors.map((s) => s.trade).filter(Boolean)))}
         onResetMockData={() => runDurableSeeding()}
         onDataReloaded={() => loadAllData(true)}
+        onIdentityChanged={() => loadIdentity()}
       />
 
       <ProjectForm
