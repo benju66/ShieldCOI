@@ -957,37 +957,27 @@ export default function SettingsModal({
                       </span>
                     </label>
 
-                    <label className="flex items-center gap-2 cursor-pointer">
+                    <div className="flex items-center gap-2 opacity-60">
                       <input
                         type="checkbox"
-                        checked={reminders.email_enabled}
-                        onChange={(e) => setReminderField("email_enabled", e.target.checked)}
-                        className="cursor-pointer"
+                        checked={false}
+                        disabled
+                        readOnly
+                        className="cursor-not-allowed"
                       />
                       <span className="text-[11px] text-slate-800 font-semibold">
                         Send email <span className="font-normal text-slate-500">(team &amp; / or vendors)</span>
                       </span>
-                    </label>
-
-                    {reminders.email_enabled && (
-                      <label className="flex items-center gap-2 cursor-pointer ml-5">
-                        <input
-                          type="checkbox"
-                          checked={reminders.notify_vendor}
-                          onChange={(e) => setReminderField("notify_vendor", e.target.checked)}
-                          className="cursor-pointer"
-                        />
-                        <span className="text-[11px] text-slate-800">
-                          Email the vendor directly <span className="text-slate-500">(where a contact email is on file)</span>
-                        </span>
-                      </label>
-                    )}
+                      <span className="text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
+                        Coming soon
+                      </span>
+                    </div>
 
                     <p className="text-[9.5px] text-slate-500 leading-normal flex items-start gap-1 pt-0.5">
                       <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" />
                       <span>
-                        In-app alerts work now. Email stays off until an email provider is connected server-side — until
-                        then these email options are saved but nothing is sent.
+                        In-app alerts are active now. Email delivery — to your team and vendors — is coming soon; it
+                        turns on once an email provider is connected.
                       </span>
                     </p>
                   </div>
