@@ -270,7 +270,7 @@ function buildSampleContractData(fileName: string) {
     employers_liability_disease_person: elDiseasePersonVal,
     employers_liability_disease_limit: elDiseaseLimitVal,
     workers_comp: wcRequiredVal,
-    pollution_liability: 2000000,
+    pollution_liability: 0, // conditional here — carried per-trade, not as a universal baseline
     professional_liability: 0,
     additional_insured_required: true,
     additional_insured_names: [pName],
@@ -280,14 +280,16 @@ function buildSampleContractData(fileName: string) {
       project_aggregate: true,
       completed_ops_ai: true,
     },
+    conditional_notes:
+      "Pollution Liability ($2M) required only for scopes involving pollutants or building enclosure, plumbing, HVAC, drywall, or foundations (Section A.5) — captured per-trade, not as a universal baseline.",
     trade_rules: [
-      { trade: "Earthwork", umbrella: 5000000, professional_liability: 2000000, pollution_liability: 0 },
-      { trade: "Concrete (with Crane)", umbrella: 10000000, professional_liability: 0, pollution_liability: 0 },
-      { trade: "Roofing", umbrella: 5000000, professional_liability: 0, pollution_liability: 0 },
+      { trade: "Earthwork", umbrella: 5000000, professional_liability: 2000000, pollution_liability: 2000000 },
+      { trade: "Concrete (with Crane)", umbrella: 10000000, professional_liability: 0, pollution_liability: 2000000 },
+      { trade: "Roofing", umbrella: 5000000, professional_liability: 0, pollution_liability: 2000000 },
       { trade: "Elevators", umbrella: 10000000, professional_liability: 0, pollution_liability: 0 },
       { trade: "Fire Sprinkler", umbrella: 5000000, professional_liability: 2000000, pollution_liability: 0 },
-      { trade: "Plumbing", umbrella: 5000000, professional_liability: 2000000, pollution_liability: 0 },
-      { trade: "HVAC", umbrella: 5000000, professional_liability: 2000000, pollution_liability: 0 },
+      { trade: "Plumbing", umbrella: 5000000, professional_liability: 2000000, pollution_liability: 2000000 },
+      { trade: "HVAC", umbrella: 5000000, professional_liability: 2000000, pollution_liability: 2000000 },
       { trade: "Electrical", umbrella: 5000000, professional_liability: 2000000, pollution_liability: 0 },
       { trade: "Other Trades", umbrella: 1000000, professional_liability: 0, pollution_liability: 0 },
     ],
@@ -398,6 +400,7 @@ Strictly return ONLY the requested JSON schema.`;
       model: "gemini-3.5-flash",
       contents: [imagePart, { text: promptText }],
       config: {
+        temperature: 0, // deterministic extraction
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -510,19 +513,27 @@ function parseTradeRulesText(text: unknown): any[] {
  */
 async function extractTradeTable(ai: GoogleGenAI, documentPart: any, tradeList: string[]): Promise<any[]> {
   try {
-    const prompt = `The attached exhibit may contain a per-trade table of higher Excess/Umbrella and/or Professional liability limits (a "Scopes Required to Provide Additional Coverage"-style table). Return it in "trade_rules_text" as ONE LINE PER LISTED TRADE, pipe-delimited:
+    const prompt = `Read the attached exhibit and return, in "trade_rules_text", the per-trade coverage requirements as ONE LINE PER TRADE that carries ANY non-baseline requirement (higher excess/umbrella, professional, or conditional pollution). Pipe-delimited:
 
 <trade> | <excess/umbrella whole dollars or 0> | <professional whole dollars or 0> | <pollution whole dollars or 0>
 
-Rules: amounts are plain digits only (e.g. 5000000), use 0 where a column is blank, and set <trade> to EXACTLY one of these canonical names (closest match; use "Other Trades" for an "all other trades" row). If there is no per-trade table, return an empty string.
+Excess & Professional: read these from any "Scopes Required to Provide Additional Coverage"-style table.
+
+Pollution: if the exhibit requires Pollution Liability only for CERTAIN scopes/trades (e.g. work involving pollutants, or building enclosure — roofing, siding, windows, curtainwall, stucco/masonry; plumbing; HVAC; drywall/insulation; foundations, concrete, earthwork), put the required pollution limit on the trades whose typical scope matches those conditions, and 0 on trades that clearly do NOT (e.g. Surveying, Electrical, Elevators). If pollution is a universal baseline (required of everyone) or not required at all, leave pollution 0 here.
+
+Rules: amounts are plain digits only (e.g. 5000000), 0 where blank, and set <trade> to EXACTLY one of these canonical names (closest match; "Other Trades" for an "all other trades" row). If there are no per-trade requirements at all, return an empty string.
 Canonical trades:
 ${tradeList.map((t) => `- ${t}`).join("\n")}`;
     const res = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: [documentPart, { text: prompt }],
       config: {
+        temperature: 0,
         responseMimeType: "application/json",
-        maxOutputTokens: 4096,
+        // Generous cap: the model spends part of this budget on internal
+        // reasoning, so a tight limit truncates the table mid-string. Still
+        // bounded so a digit-repetition loop can't run away.
+        maxOutputTokens: 16384,
         responseSchema: {
           type: Type.OBJECT,
           properties: { trade_rules_text: { type: Type.STRING } },
@@ -592,13 +603,13 @@ export async function scanContract(payload: any): Promise<ScanResult> {
 
 IGNORE any coverage the OWNER or CONTRACTOR carries (e.g. Builder's Risk, "Owner's Insurance"). Extract ONLY what the subcontractor must provide.
 
-Extract these as exact numeric USD limits (use 0 when a coverage is not required as a universal baseline for every subcontractor):
-- General Liability: each-occurrence, general aggregate, and products-completed aggregate
-- Automobile: combined single limit
-- Umbrella / Excess: each-occurrence baseline
-- Employers' Liability: the three limits; and whether Workers' Compensation is required (workers_comp)
-- Pollution Liability baseline
-- Professional Liability baseline — but if it is only required for certain design-build trades (not for everyone), set the baseline to 0 and capture the per-trade amounts in trade_rules instead
+Extract these as exact numeric USD limits. Distinguish UNIVERSAL baselines (required of EVERY subcontractor) from CONDITIONAL coverages (required only for certain scopes or trades).
+
+Universal coverages — General Liability (each-occurrence, general aggregate, products-completed), Automobile combined single limit, Umbrella/Excess each-occurrence, the three Employers' Liability limits, and Workers' Compensation — take their limits from a "Standard Coverage Requirements" / minimum summary table when present. Use 0 only if truly not required.
+
+Pollution and Professional liability are frequently CONDITIONAL. If the exhibit conditions them on scope or trade (e.g. "if the work involves pollutants"; building enclosure, plumbing, HVAC, drywall, foundations/concrete/masonry; or "design-build" services), set their BASELINE (pollution_liability / professional_liability) to 0 and capture the required amounts PER-TRADE in the trade table instead — even if a summary table lists them. Set a pollution/professional BASELINE only when the coverage is required of every subcontractor unconditionally.
+
+In "conditional_notes", briefly summarize any such conditions you found (e.g. which scopes trigger pollution), or "" if none.
 
 Also extract:
 - additional_insured_required (boolean) and additional_insured_names: the entities the subcontractor must name as additional insured (e.g. the general contractor). Return [] if none named.
@@ -612,6 +623,7 @@ Also extract:
       contents: [documentPart, { text: basePromptText }],
       config: {
         systemInstruction,
+        temperature: 0, // deterministic extraction — avoids run-to-run flip-flops on ambiguous fields
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -640,6 +652,7 @@ Also extract:
                 completed_ops_ai: { type: Type.BOOLEAN },
               },
             },
+            conditional_notes: { type: Type.STRING, description: "Brief note of any conditional-coverage triggers (e.g. which scopes require pollution), or empty string if none." },
           },
           required: [
             "projectName",
@@ -657,6 +670,7 @@ Also extract:
             "additional_insured_required",
             "additional_insured_names",
             "endorsements",
+            "conditional_notes",
           ],
         },
       },

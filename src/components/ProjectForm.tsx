@@ -70,6 +70,8 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
   // Per-trade escalations detected from a scanned exhibit (org-wide; applied on demand).
   const [detectedTradeRules, setDetectedTradeRules] = useState<Record<string, TradeRule>>({});
   const [appliedTradeRules, setAppliedTradeRules] = useState(false);
+  // Conditional-coverage note surfaced from a scan (e.g. pollution scope triggers).
+  const [scanNotes, setScanNotes] = useState("");
   const [expiredTemplate, setExpiredTemplate] = useState(() => settings.email_templates.expired_template);
   const [insufficientTemplate, setInsufficientTemplate] = useState(() => settings.email_templates.insufficient_template);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
@@ -79,6 +81,7 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
       const d = settings.default_requirements;
       setDetectedTradeRules({});
       setAppliedTradeRules(false);
+      setScanNotes("");
       if (projectToEdit) {
         setName(projectToEdit.name || "");
         setNumber(projectToEdit.number || "");
@@ -155,6 +158,7 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
     }
     setDetectedTradeRules(mapScannedTradeRules(extracted.trade_rules, settings.trades));
     setAppliedTradeRules(false);
+    setScanNotes(typeof extracted.conditional_notes === "string" ? extracted.conditional_notes : "");
   };
 
   /** Merge the detected per-trade escalations into the org-wide trade rules. */
@@ -474,6 +478,17 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
                 Notice: This is an experimental feature utilizing generative AI. Always cross-reference extracted metrics against your hardcopy contract agreements before finalizing project baselines.
               </p>
             </div>
+
+            {/* Conditional-coverage note surfaced from the scan (e.g. pollution triggers) */}
+            {scanNotes && (
+              <div id="scan-conditional-note" className="bg-amber-50/60 border border-amber-200 rounded-lg p-3 flex items-start gap-2">
+                <span className="text-sm flex-shrink-0">⚠️</span>
+                <div>
+                  <p className="text-[10px] font-bold text-amber-800 uppercase tracking-wide">Conditional coverage — review</p>
+                  <p className="text-[10.5px] text-slate-700 leading-snug">{scanNotes}</p>
+                </div>
+              </div>
+            )}
 
             {/* Detected trade-specific escalations (from a scanned exhibit) */}
             {Object.keys(detectedTradeRules).length > 0 && (
