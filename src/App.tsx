@@ -50,7 +50,7 @@ import {
   getCoiRecords
 } from "./dbService";
 
-import { Project, Subcontractor, Notification, CoiRecord } from "./types";
+import { Project, Subcontractor, Notification, CoiRecord, EndorsementFacts } from "./types";
 import DashboardStats from "./components/DashboardStats";
 import NeedsAttention from "./components/NeedsAttention";
 import ProjectForm from "./components/ProjectForm";
@@ -137,6 +137,8 @@ export default function App() {
     additional_insured_blanket?: boolean;
     additional_insured_text?: string;
     gl_addl_insd?: boolean;
+    gl_form?: "Occurrence" | "Claims-Made" | "Unknown";
+    endorsement_facts?: EndorsementFacts;
     file_data?: string;
     file_mime?: string;
     field_locations?: { field: string; page?: number; box_2d: number[] }[];
@@ -319,6 +321,8 @@ export default function App() {
       additional_insured_blanket_extracted: payloadToSave.additional_insured_blanket ?? false,
       additional_insured_text_extracted: payloadToSave.additional_insured_text ?? "",
       gl_addl_insd_extracted: payloadToSave.gl_addl_insd ?? false,
+      gl_form_extracted: payloadToSave.gl_form ?? "Unknown",
+      endorsement_facts_extracted: payloadToSave.endorsement_facts ?? {},
       extraction_method: payloadToSave.extraction_method || "AI_Scan",
     });
 

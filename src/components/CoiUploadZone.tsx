@@ -2,6 +2,7 @@ import React, { useState, useRef } from "react";
 import { Upload, FileText, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
 import { todayISO } from "../settingsService";
 import { useSettings } from "../SettingsContext";
+import { EndorsementFacts } from "../types";
 
 interface CoiUploadZoneProps {
   onScanComplete: (data: {
@@ -27,6 +28,8 @@ interface CoiUploadZoneProps {
     additional_insured_blanket?: boolean;
     additional_insured_text?: string;
     gl_addl_insd?: boolean;
+    gl_form?: "Occurrence" | "Claims-Made" | "Unknown";
+    endorsement_facts?: EndorsementFacts;
     file_data?: string;
     file_mime?: string;
     field_locations?: { field: string; page?: number; box_2d: number[] }[];
@@ -82,6 +85,8 @@ export default function CoiUploadZone({ onScanComplete, onScanStart, customRequi
       additional_insured_blanket: false,
       additional_insured_text: "",
       gl_addl_insd: false,
+      gl_form: "Occurrence",
+      endorsement_facts: {},
       file_name: "Manual_Entry_Document.pdf",
       simulated: false,
       extraction_method: "Manual_Entry",
@@ -131,7 +136,14 @@ export default function CoiUploadZone({ onScanComplete, onScanStart, customRequi
           });
 
           if (!res.ok) {
-            throw new Error(`Server returned status code: ${res.status}`);
+            // Fail closed: surface the server's reason (e.g. unconfigured /
+            // unreadable) so the user can enter the certificate manually.
+            let msg = "Scanning couldn't complete. Enter the certificate details manually.";
+            try {
+              const errBody = await res.json();
+              if (errBody?.error) msg = errBody.error;
+            } catch {}
+            throw new Error(msg);
           }
 
           const responseData = await res.json();
@@ -154,7 +166,7 @@ export default function CoiUploadZone({ onScanComplete, onScanStart, customRequi
           }
         } catch (serverErr: any) {
           console.error("Scanning request failed:", serverErr);
-          setError("Scanning Unsuccessful: Document text could not be reliably extracted by AI.");
+          setError(serverErr?.message || "Scanning Unsuccessful — enter the certificate details manually.");
           setLoading(false);
         }
       };
@@ -251,7 +263,7 @@ export default function CoiUploadZone({ onScanComplete, onScanStart, customRequi
         <div id="coi-upload-error-box" className="p-4 bg-amber-50/50 border border-amber-200 rounded-lg text-center flex flex-col items-center justify-center space-y-3">
           <AlertTriangle className="h-8 w-8 text-amber-600 mb-1" />
           <p className="text-xs font-bold text-amber-900">
-            Scanning Unsuccessful: Document text could not be reliably extracted by AI.
+            {error}
           </p>
           <div className="flex space-x-2 mt-2 w-full justify-center">
             <button

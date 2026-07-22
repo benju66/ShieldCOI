@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { FolderPlus, HelpCircle, X, Upload, FileText, RefreshCw } from "lucide-react";
-import { Project } from "../types";
+import { Project, EndorsementRequirements } from "../types";
 import CurrencyInput from "./CurrencyInput";
 import { useSettings } from "../SettingsContext";
 
@@ -33,6 +33,7 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
   const [additionalInsuredRequired, setAdditionalInsuredRequired] = useState(false);
   const [additionalInsuredNames, setAdditionalInsuredNames] = useState<string[]>([]);
   const [acceptBlanketAi, setAcceptBlanketAi] = useState(true);
+  const [endorsementReqs, setEndorsementReqs] = useState<EndorsementRequirements>({});
   const [expiredTemplate, setExpiredTemplate] = useState(() => settings.email_templates.expired_template);
   const [insufficientTemplate, setInsufficientTemplate] = useState(() => settings.email_templates.insufficient_template);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
@@ -60,6 +61,7 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
         setAdditionalInsuredRequired(projectToEdit.additional_insured_required ?? false);
         setAdditionalInsuredNames(projectToEdit.additional_insured_names || []);
         setAcceptBlanketAi(projectToEdit.accept_blanket_ai ?? true);
+        setEndorsementReqs(projectToEdit.endorsement_requirements || {});
         setExpiredTemplate(projectToEdit.email_templates?.expired_template ?? settings.email_templates.expired_template);
         setInsufficientTemplate(projectToEdit.email_templates?.insufficient_template ?? settings.email_templates.insufficient_template);
         setIsTemplatesOpen(false);
@@ -83,6 +85,7 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
         setAdditionalInsuredRequired(false);
         setAdditionalInsuredNames([]);
         setAcceptBlanketAi(true);
+        setEndorsementReqs({});
         setExpiredTemplate(settings.email_templates.expired_template);
         setInsufficientTemplate(settings.email_templates.insufficient_template);
         setIsTemplatesOpen(false);
@@ -134,7 +137,13 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
           });
 
           if (!res.ok) {
-            throw new Error(`Server returned status code: ${res.status}`);
+            // Fail closed: surface the server's reason instead of a generic code.
+            let msg = `Contract scan couldn't complete (status ${res.status}).`;
+            try {
+              const errBody = await res.json();
+              if (errBody?.error) msg = errBody.error;
+            } catch {}
+            throw new Error(msg);
           }
 
           const responseData = await res.json();
@@ -265,6 +274,7 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
         additional_insured_required: additionalInsuredRequired,
         additional_insured_names: additionalInsuredNames.map((n) => n.trim()).filter(Boolean),
         accept_blanket_ai: acceptBlanketAi,
+        endorsement_requirements: endorsementReqs,
         email_templates: {
           expired_template: expiredTemplate,
           insufficient_template: insufficientTemplate,
@@ -787,6 +797,40 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* Endorsement Verification (opt-in advisories) */}
+            <div id="endorsement-requirements-panel" className="bg-slate-50 p-3.5 rounded-lg border border-slate-200 space-y-2">
+              <div>
+                <p className="text-[11px] font-bold text-slate-800">Require Endorsements (advisory)</p>
+                <p className="text-[10px] text-slate-500">
+                  Surface a "verify the endorsement" note on each COI. Never auto-fails status — a certificate box isn't proof of the form.
+                </p>
+              </div>
+              {(
+                [
+                  ["waiver_of_subrogation", "Waiver of Subrogation", "CG 24 04"],
+                  ["primary_noncontributory", "Primary & Non-Contributory", "CG 20 01"],
+                  ["project_aggregate", "Per-Project Aggregate", "CG 25 03"],
+                  ["completed_ops_ai", "Completed-Ops Additional Insured", "CG 20 37"],
+                ] as const
+              ).map(([key, label, form]) => (
+                <div key={key} className="flex items-center justify-between border-t border-slate-200 pt-2">
+                  <div className="pr-3">
+                    <p className="text-[11px] font-bold text-slate-800">{label}</p>
+                    <p className="text-[10px] text-slate-500">e.g. {form}</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={!!endorsementReqs[key]}
+                      onChange={(e) => setEndorsementReqs({ ...endorsementReqs, [key]: e.target.checked })}
+                      className="sr-only peer"
+                    />
+                    <div className="w-8 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-400 after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-blue-600 peer-checked:after:bg-white"></div>
+                  </label>
+                </div>
+              ))}
             </div>
 
             {/* ✉️ Notification Email Templates Configuration */}

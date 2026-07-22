@@ -1,4 +1,4 @@
-import { Project } from "./types";
+import { Project, EndorsementFacts } from "./types";
 import { resolveRequiredCoverage, TradeRule } from "./tradeRules";
 
 /**
@@ -52,15 +52,33 @@ export function verifyCompliance(
     additional_insured_named?: string[];
     additional_insured_blanket?: boolean;
     gl_addl_insd?: boolean;
+    gl_form?: "Occurrence" | "Claims-Made" | "Unknown";
+    endorsement_facts?: EndorsementFacts;
   },
   subcontractorTrade: string = "Other Trades",
   currentDateStr: string,
-  tradeRules: Record<string, TradeRule> = {}
+  tradeRules: Record<string, TradeRule> = {},
+  subcontractorLegalName: string = ""
 ): { status: "Compliant" | "Insufficient Coverage" | "Expired" | "Pending Upload"; errors: string[] } {
   const errors: string[] = [];
   const req = project.requirements;
   const trade = (subcontractorTrade || "Other Trades").trim();
   const required = resolveRequiredCoverage(req, trade, tradeRules);
+
+  // 0. Insured-name identity — ADVISORY only. The certificate must be issued to
+  // the vendor we enrolled; a certificate issued to a different legal entity
+  // extends that entity's coverage, not this vendor's. Name variations are
+  // common (DBA, "Inc."/"LLC", parent/subsidiary), so a mismatch surfaces a
+  // "verify" advisory rather than failing status — the same conservative
+  // treatment as blanket additional-insured language. Skipped when either name
+  // is blank (e.g. legacy callers that don't pass the vendor name).
+  const insuredNorm = normalizeEntity(coi.insured_name || "");
+  const legalNorm = normalizeEntity(subcontractorLegalName || "");
+  if (insuredNorm && legalNorm && !insuredNorm.includes(legalNorm) && !legalNorm.includes(insuredNorm)) {
+    errors.push(
+      `Insured Name: certificate is issued to "${coi.insured_name}", which does not match the enrolled vendor "${subcontractorLegalName}" — verify this certificate belongs to this vendor.`
+    );
+  }
 
   // 1. General Liability - Each Occurrence Limit ($)
   if (coi.gl_each_occurrence < req.gl_occurrence) {
@@ -73,6 +91,17 @@ export function verifyCompliance(
   if (coi.gl_general_aggregate < req.gl_aggregate) {
     errors.push(
       `General Liability: General Aggregate limit ($${coi.gl_general_aggregate.toLocaleString()}) is less than the required $${req.gl_aggregate.toLocaleString()}.`
+    );
+  }
+
+  // 2b. GL coverage form — construction requires OCCURRENCE-based General
+  // Liability. A policy written on a CLAIMS-MADE basis is a structural coverage
+  // deficiency (the ACORD 25 explicitly boxes OCCUR vs CLAIMS-MADE), so it fails
+  // status. Only flagged when clearly extracted as claims-made; "Unknown" or an
+  // absent value (legacy records) never penalizes.
+  if (coi.gl_form === "Claims-Made") {
+    errors.push(
+      `General Liability is written on a CLAIMS-MADE basis; the project requires OCCURRENCE-based coverage.`
     );
   }
 
@@ -223,10 +252,38 @@ export function verifyCompliance(
     }
   }
 
+  // 15. Endorsement verification (opt-in per project; ADVISORY only). A COI
+  // checkbox is not proof of the underlying endorsement form, so — like blanket
+  // additional-insured language — a required endorsement surfaces a "verify the
+  // endorsement" note (present) or a "request the endorsement" note (absent)
+  // that never fails status. Skipped entirely unless the project opts in.
+  const endReq = project.endorsement_requirements;
+  if (endReq) {
+    const facts: EndorsementFacts = coi.endorsement_facts || {};
+    const adviseEndorsement = (present: boolean | undefined, label: string, form: string) => {
+      if (present) {
+        errors.push(`${label} is required — the certificate indicates it; verify the endorsement (e.g. ${form}).`);
+      } else {
+        errors.push(`${label} is required by the project but none was found — request the endorsement (e.g. ${form}).`);
+      }
+    };
+    if (endReq.waiver_of_subrogation) adviseEndorsement(facts.waiver_of_subrogation, "Waiver of Subrogation", "CG 24 04");
+    if (endReq.primary_noncontributory) adviseEndorsement(facts.primary_noncontributory, "Primary & Non-Contributory coverage", "CG 20 01");
+    if (endReq.project_aggregate) adviseEndorsement(facts.project_aggregate, "Per-Project Aggregate", "CG 25 03");
+    if (endReq.completed_ops_ai) adviseEndorsement(facts.completed_ops_ai, "Completed-Operations Additional Insured", "CG 20 37");
+  }
+
   let finalStatus: "Compliant" | "Insufficient Coverage" | "Expired" | "Pending Upload" = "Compliant";
   if (isExpired) {
     finalStatus = "Expired";
-  } else if (errors.some((err) => !err.includes("risk grace threshold") && !err.includes("Verify the endorsement"))) {
+  } else if (
+    errors.some(
+      (err) =>
+        !err.includes("risk grace threshold") &&
+        !err.includes("the endorsement") &&
+        !err.includes("does not match the enrolled vendor")
+    )
+  ) {
     // If we have actual limit shortfalls, or missing WC / structural gaps
     finalStatus = "Insufficient Coverage";
   } else {

@@ -15,12 +15,34 @@ export interface ProjectRequirements {
   pollution_liability?: number;
 }
 
+/**
+ * Optional endorsement checks a project can require (opt-in; absent/false = not
+ * required). These are verified as ADVISORIES only — a COI checkbox is not proof
+ * of the underlying endorsement form, so they surface a "verify the endorsement"
+ * note rather than failing the certificate's status.
+ */
+export interface EndorsementRequirements {
+  waiver_of_subrogation?: boolean;
+  primary_noncontributory?: boolean;
+  project_aggregate?: boolean; // dedicated per-project GL aggregate (e.g. CG 25 03/04)
+  completed_ops_ai?: boolean; // completed-operations additional insured (e.g. CG 20 37)
+}
+
+/** The same endorsement facts as read off a certificate (true = indicated on the COI). */
+export interface EndorsementFacts {
+  waiver_of_subrogation?: boolean;
+  primary_noncontributory?: boolean;
+  project_aggregate?: boolean;
+  completed_ops_ai?: boolean;
+}
+
 export interface Project {
   id: string;
   name: string;
   number: string;
   target_completion_date: string; // YYYY-MM-DD
   requirements: ProjectRequirements;
+  endorsement_requirements?: EndorsementRequirements;
   createdAt: string;
   /** Archived projects are hidden from active dashboards, triage, and vendor roll-ups. Absent = active. */
   archived?: boolean;
@@ -104,6 +126,12 @@ export interface CoiRecord {
   additional_insured_blanket_extracted?: boolean;
   additional_insured_text_extracted?: string;
   gl_addl_insd_extracted?: boolean;
+  // GL coverage basis as marked on the ACORD 25 (OCCUR vs CLAIMS-MADE box).
+  // Absent on legacy records — the engine only flags an explicit "Claims-Made".
+  gl_form_extracted?: "Occurrence" | "Claims-Made" | "Unknown";
+  // Endorsement facts read off the certificate (WOS / P&NC / per-project
+  // aggregate / completed-ops AI). Only evaluated when the project opts in.
+  endorsement_facts_extracted?: EndorsementFacts;
 }
 
 export interface Notification {

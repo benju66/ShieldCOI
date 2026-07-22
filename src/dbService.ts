@@ -19,6 +19,7 @@ function rowToProject(r: any): Project {
     number: r.number,
     target_completion_date: r.target_completion_date,
     requirements: r.requirements,
+    endorsement_requirements: r.endorsement_requirements ?? {},
     createdAt: r.created_at,
     custom_requirements: r.custom_requirements ?? [],
     additional_insured_required: r.additional_insured_required ?? false,
@@ -37,6 +38,7 @@ function projectToRow(p: Partial<Project>): Record<string, any> {
     "number",
     "target_completion_date",
     "requirements",
+    "endorsement_requirements",
     "custom_requirements",
     "additional_insured_required",
     "additional_insured_names",
@@ -276,10 +278,13 @@ export async function submitCoiRecord(
       additional_insured_named: coiData.additional_insured_named_extracted,
       additional_insured_blanket: coiData.additional_insured_blanket_extracted,
       gl_addl_insd: coiData.gl_addl_insd_extracted,
+      gl_form: coiData.gl_form_extracted,
+      endorsement_facts: coiData.endorsement_facts_extracted,
     },
     trade,
     evalDate,
-    settings.trade_rules
+    settings.trade_rules,
+    subcontractor.company_name
   );
 
   // 3. Write the COI record

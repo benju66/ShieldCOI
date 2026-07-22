@@ -288,6 +288,134 @@ describe("verifyCompliance — expiration", () => {
 });
 
 // ---------------------------------------------------------------------------
+// GL coverage form (occurrence vs claims-made)
+// ---------------------------------------------------------------------------
+
+describe("verifyCompliance — GL coverage form", () => {
+  it("fails a claims-made GL policy", () => {
+    const result = verifyCompliance(makeProject(), makeCoi({ gl_form: "Claims-Made" }), "Other Trades", NOW);
+    expect(result.status).toBe("Insufficient Coverage");
+    expect(hasError(result.errors, "CLAIMS-MADE")).toBe(true);
+  });
+
+  it("passes an occurrence-based GL policy", () => {
+    const result = verifyCompliance(makeProject(), makeCoi({ gl_form: "Occurrence" }), "Other Trades", NOW);
+    expect(hasError(result.errors, "CLAIMS-MADE")).toBe(false);
+    expect(result.status).toBe("Compliant");
+  });
+
+  it("does not penalize an unknown or absent coverage form (legacy records)", () => {
+    expect(hasError(verifyCompliance(makeProject(), makeCoi({ gl_form: "Unknown" }), "Other Trades", NOW).errors, "CLAIMS-MADE")).toBe(false);
+    expect(hasError(verifyCompliance(makeProject(), makeCoi({ gl_form: undefined }), "Other Trades", NOW).errors, "CLAIMS-MADE")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Endorsement verification (opt-in advisories)
+// ---------------------------------------------------------------------------
+
+describe("verifyCompliance — endorsement advisories", () => {
+  it("is skipped entirely when the project opts out (no endorsement_requirements)", () => {
+    const result = verifyCompliance(makeProject(), makeCoi(), "Other Trades", NOW);
+    expect(hasError(result.errors, "endorsement")).toBe(false);
+    expect(result.status).toBe("Compliant");
+  });
+
+  it("advises to verify when a required endorsement is indicated on the certificate", () => {
+    const project = makeProject({ endorsement_requirements: { waiver_of_subrogation: true } });
+    const result = verifyCompliance(
+      project,
+      makeCoi({ endorsement_facts: { waiver_of_subrogation: true } }),
+      "Other Trades",
+      NOW
+    );
+    expect(hasError(result.errors, "Waiver of Subrogation is required — the certificate indicates it")).toBe(true);
+    // Advisory only — does not fail status.
+    expect(result.status).toBe("Compliant");
+  });
+
+  it("advises to request when a required endorsement is absent — still without failing status", () => {
+    const project = makeProject({
+      endorsement_requirements: { primary_noncontributory: true, completed_ops_ai: true },
+    });
+    const result = verifyCompliance(project, makeCoi({ endorsement_facts: {} }), "Other Trades", NOW);
+    expect(hasError(result.errors, "Primary & Non-Contributory coverage is required by the project but none was found")).toBe(true);
+    expect(hasError(result.errors, "Completed-Operations Additional Insured is required by the project but none was found")).toBe(true);
+    expect(result.status).toBe("Compliant");
+  });
+
+  it("only advises on the endorsements the project actually requires", () => {
+    const project = makeProject({ endorsement_requirements: { project_aggregate: true } });
+    const result = verifyCompliance(project, makeCoi({ endorsement_facts: {} }), "Other Trades", NOW);
+    expect(hasError(result.errors, "Per-Project Aggregate")).toBe(true);
+    expect(hasError(result.errors, "Waiver of Subrogation")).toBe(false);
+    expect(hasError(result.errors, "Primary & Non-Contributory")).toBe(false);
+  });
+
+  it("still fails on a real coverage shortfall alongside endorsement advisories", () => {
+    const project = makeProject({ endorsement_requirements: { waiver_of_subrogation: true } });
+    const result = verifyCompliance(
+      project,
+      makeCoi({ gl_each_occurrence: 1, endorsement_facts: {} }),
+      "Other Trades",
+      NOW
+    );
+    expect(result.status).toBe("Insufficient Coverage");
+    expect(hasError(result.errors, "request the endorsement")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Insured-name identity (advisory)
+// ---------------------------------------------------------------------------
+
+describe("verifyCompliance — insured name identity", () => {
+  it("does not flag when the certificate name fuzzy-matches the enrolled vendor", () => {
+    const result = verifyCompliance(
+      makeProject(),
+      makeCoi({ insured_name: "Acme Electrical, Inc." }),
+      "Other Trades",
+      NOW,
+      {},
+      "Acme Electrical LLC"
+    );
+    expect(hasError(result.errors, "does not match the enrolled vendor")).toBe(false);
+    expect(result.status).toBe("Compliant");
+  });
+
+  it("emits a verify advisory (without failing status) when the names differ", () => {
+    const result = verifyCompliance(
+      makeProject(),
+      makeCoi({ insured_name: "Totally Different Roofing LLC" }),
+      "Other Trades",
+      NOW,
+      {},
+      "Acme Electrical LLC"
+    );
+    expect(hasError(result.errors, "does not match the enrolled vendor")).toBe(true);
+    // Advisory only — a name mismatch alone does not fail the certificate.
+    expect(result.status).toBe("Compliant");
+  });
+
+  it("still reports a real coverage shortfall even when the name matches", () => {
+    const result = verifyCompliance(
+      makeProject(),
+      makeCoi({ insured_name: "Acme Electrical LLC", gl_each_occurrence: 1 }),
+      "Other Trades",
+      NOW,
+      {},
+      "Acme Electrical LLC"
+    );
+    expect(result.status).toBe("Insufficient Coverage");
+  });
+
+  it("skips the check when the vendor name is not provided (legacy call)", () => {
+    const result = verifyCompliance(makeProject(), makeCoi({ insured_name: "Anything LLC" }), "Other Trades", NOW);
+    expect(hasError(result.errors, "does not match the enrolled vendor")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Custom requirements
 // ---------------------------------------------------------------------------
 

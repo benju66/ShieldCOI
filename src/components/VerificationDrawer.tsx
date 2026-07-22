@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { X, Check, ShieldCheck, ShieldAlert, FileWarning, Eye } from "lucide-react";
-import { Project } from "../types";
+import { Project, EndorsementFacts } from "../types";
 import { verifyCompliance, isNamedAdditionalInsured } from "../complianceEngine";
 import { formatUSD } from "../utils/currency";
 import DocumentViewer, { ACORD25_FIELD_TEMPLATE } from "./DocumentViewer";
@@ -40,6 +40,8 @@ interface VerificationDrawerProps {
     additional_insured_blanket?: boolean;
     additional_insured_text?: string;
     gl_addl_insd?: boolean;
+    gl_form?: "Occurrence" | "Claims-Made" | "Unknown";
+    endorsement_facts?: EndorsementFacts;
     file_data?: string;
     file_mime?: string;
     field_locations?: { field: string; page?: number; box_2d: number[] }[];
@@ -98,6 +100,8 @@ export default function VerificationDrawer({
     additional_insured_blanket?: boolean;
     additional_insured_text?: string;
     gl_addl_insd?: boolean;
+    gl_form?: "Occurrence" | "Claims-Made" | "Unknown";
+    endorsement_facts?: EndorsementFacts;
     file_data?: string;
     file_mime?: string;
     field_locations?: { field: string; page?: number; box_2d: number[] }[];
@@ -135,6 +139,8 @@ export default function VerificationDrawer({
         additional_insured_blanket: !!extractedData.additional_insured_blanket,
         additional_insured_text: extractedData.additional_insured_text || "",
         gl_addl_insd: !!extractedData.gl_addl_insd,
+        gl_form: extractedData.gl_form || "Occurrence",
+        endorsement_facts: extractedData.endorsement_facts || {},
         file_data: extractedData.file_data,
         file_mime: extractedData.file_mime,
         field_locations: extractedData.field_locations,
@@ -152,7 +158,13 @@ export default function VerificationDrawer({
   const trade = subContractorTrade || "Other Trades";
   const tradeRules = settings.trade_rules;
   const required = resolveRequiredCoverage(req, trade, tradeRules);
-  const analysis = verifyCompliance(project, activeData, trade, evaluationDate, tradeRules);
+  const analysis = verifyCompliance(project, activeData, trade, evaluationDate, tradeRules, subContractorName);
+
+  // Insured-name identity: does the certificate's insured fuzzy-match the enrolled
+  // vendor? Reuses the same normalization/inclusion logic as the engine advisory.
+  // Neutral (treated as a match) when either name is blank.
+  const insuredNameProvided = !!(activeData.insured_name || "").trim() && !!(subContractorName || "").trim();
+  const isInsuredNameMatch = !insuredNameProvided || isNamedAdditionalInsured(subContractorName, [activeData.insured_name || ""]);
 
   // Compare each field to see if it meets threshold reactively
   const isGlOccPassed = activeData.gl_each_occurrence >= req.gl_occurrence;
@@ -177,6 +189,9 @@ export default function VerificationDrawer({
   const isPollutionPassed = (activeData.pollution_liability ?? 0) >= required.pollutionLiability;
 
   const isNotExpired = new Date(activeData.policy_expiration_date) > new Date(evaluationDate);
+
+  // GL coverage form: only an explicit claims-made basis fails; Occurrence/Unknown pass.
+  const isGlFormOk = activeData.gl_form !== "Claims-Made";
 
   const finalStatus = override 
     ? "Approved Exception" 
@@ -215,7 +230,7 @@ export default function VerificationDrawer({
     : (activeData.additional_insured_named || []).length > 0 || aiBlanketOk || !!activeData.gl_addl_insd;
 
   const fieldStatus: Record<string, "pass" | "fail" | "neutral"> = {
-    insured_name: "neutral",
+    insured_name: isInsuredNameMatch ? "neutral" : "fail",
     gl_each_occurrence: isGlOccPassed ? "pass" : "fail",
     gl_general_aggregate: isGlAggPassed ? "pass" : "fail",
     auto_combined_single_limit: isAutoPassed ? "pass" : "fail",
@@ -343,7 +358,12 @@ export default function VerificationDrawer({
             <div className="space-y-1.5">
               
               {/* Insured Name */}
-              <div id="match-row-insured" className="grid grid-cols-12 gap-2 items-center p-2.5 rounded bg-slate-50 border border-slate-200">
+              <div
+                id="match-row-insured"
+                className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
+                  isInsuredNameMatch ? "bg-slate-50 border-slate-200" : "bg-amber-50 border-amber-200"
+                }`}
+              >
                 <div className="col-span-5">
                   <p className="text-xs font-bold text-slate-800">Insured Company Name</p>
                   <p className="text-[10px] text-slate-500">Must match registered trade vendor</p>
@@ -361,12 +381,23 @@ export default function VerificationDrawer({
                   ) : (
                     <>
                       <p className="text-xs font-mono font-bold text-blue-600">{activeData.insured_name}</p>
-                      <p className="text-[10px] text-slate-400">Registry name: {subContractorName}</p>
+                      <p className={`text-[10px] ${isInsuredNameMatch ? "text-slate-400" : "text-amber-700 font-semibold"}`}>
+                        Registry name: {subContractorName}
+                      </p>
                     </>
                   )}
                 </div>
                 <div className="col-span-1 flex justify-center">
-                  <Check className="h-4 w-4 text-emerald-600" />
+                  {isInsuredNameMatch ? (
+                    <Check className="h-4 w-4 text-emerald-600" />
+                  ) : (
+                    <span
+                      className="text-[10px] text-amber-600 font-bold uppercase"
+                      title="Insured name does not match the enrolled vendor — verify this certificate belongs to this vendor"
+                    >
+                      ⚠
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -444,6 +475,49 @@ export default function VerificationDrawer({
                     <Check className="h-4 w-4 text-emerald-600" />
                   ) : (
                     <span className="text-[10px] text-red-650 text-red-600 font-bold uppercase">FAIL</span>
+                  )}
+                </div>
+              </div>
+
+              {/* GL Coverage Form (Occurrence vs Claims-Made) */}
+              <div
+                id="match-row-gl-form"
+                className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
+                  isGlFormOk ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                }`}
+              >
+                <div className="col-span-5">
+                  <p className="text-xs font-bold text-slate-800">GL Coverage Form</p>
+                  <p className="text-[10px] text-slate-500">Must be occurrence-based</p>
+                </div>
+                <div className="col-span-3 text-right">
+                  {isManualMode ? (
+                    <select
+                      id="input-gl-form"
+                      value={activeData.gl_form || "Occurrence"}
+                      onChange={(e) =>
+                        setFormData({ ...activeData, gl_form: e.target.value as "Occurrence" | "Claims-Made" | "Unknown" })
+                      }
+                      className="w-full text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value="Occurrence">Occurrence</option>
+                      <option value="Claims-Made">Claims-Made</option>
+                      <option value="Unknown">Unknown</option>
+                    </select>
+                  ) : (
+                    <p className={`text-xs font-bold ${isGlFormOk ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                      {activeData.gl_form || "Unknown"}
+                    </p>
+                  )}
+                </div>
+                <div className="col-span-3 text-right">
+                  <p className="text-xs text-slate-500">Occurrence</p>
+                </div>
+                <div className="col-span-1 flex justify-center">
+                  {isGlFormOk ? (
+                    <Check className="h-4 w-4 text-emerald-600" />
+                  ) : (
+                    <span className="text-[10px] text-red-600 font-bold uppercase">FAIL</span>
                   )}
                 </div>
               </div>
@@ -1003,6 +1077,73 @@ export default function VerificationDrawer({
                   </div>
                 </div>
               )}
+
+              {/* Endorsement verification (opt-in per project; advisory only) */}
+              {project.endorsement_requirements &&
+                (project.endorsement_requirements.waiver_of_subrogation ||
+                  project.endorsement_requirements.primary_noncontributory ||
+                  project.endorsement_requirements.project_aggregate ||
+                  project.endorsement_requirements.completed_ops_ai) && (
+                  <div id="drawer-endorsements-group" className="pt-2.5 border-t border-slate-200 mt-2 space-y-1.5">
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">
+                      Required Endorsements
+                    </p>
+                    <p className="text-[10px] text-slate-500 px-1 -mt-1 leading-snug">
+                      Advisory only — a certificate box is not proof of the endorsement form.
+                    </p>
+                    {(
+                      [
+                        ["waiver_of_subrogation", "Waiver of Subrogation", "CG 24 04"],
+                        ["primary_noncontributory", "Primary & Non-Contributory", "CG 20 01"],
+                        ["project_aggregate", "Per-Project Aggregate", "CG 25 03"],
+                        ["completed_ops_ai", "Completed-Ops Additional Insured", "CG 20 37"],
+                      ] as const
+                    ).map(([key, label, form]) => {
+                      if (!project.endorsement_requirements?.[key]) return null;
+                      const facts = activeData.endorsement_facts || {};
+                      const present = !!facts[key];
+                      return (
+                        <div
+                          key={key}
+                          data-testid={`match-row-endorsement-${key}`}
+                          className="grid grid-cols-12 gap-2 items-center p-2.5 rounded border bg-amber-50 border-amber-200"
+                        >
+                          <div className="col-span-7">
+                            <p className="text-xs font-bold text-slate-800">{label}</p>
+                            <p className="text-[10px] text-slate-500">Verify endorsement (e.g. {form})</p>
+                          </div>
+                          <div className="col-span-4 text-right">
+                            {isManualMode ? (
+                              <label className="inline-flex items-center space-x-1.5 cursor-pointer justify-end">
+                                <input
+                                  type="checkbox"
+                                  checked={present}
+                                  onChange={(e) =>
+                                    setFormData({ ...activeData, endorsement_facts: { ...facts, [key]: e.target.checked } })
+                                  }
+                                  className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5"
+                                />
+                                <span className="text-[11px] font-bold text-slate-700">On certificate</span>
+                              </label>
+                            ) : (
+                              <p className="text-[11px] font-bold text-amber-700">
+                                {present ? "Indicated — verify" : "Not found — request"}
+                              </p>
+                            )}
+                          </div>
+                          <div className="col-span-1 flex justify-center">
+                            <span
+                              className="text-[10px] text-amber-600 font-bold uppercase"
+                              title={present ? "Indicated on certificate — verify the endorsement form" : "Required but not found — request the endorsement"}
+                            >
+                              ⚠
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
             </div>
           </div>
 
