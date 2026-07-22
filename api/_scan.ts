@@ -618,7 +618,7 @@ Also extract:
     const basePromptText =
       "Scan the attached contract / subcontract insurance exhibit and populate the schedule of the subcontractor's required insurance.";
 
-    const response = await ai.models.generateContent({
+    const baselinePromise = ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: [documentPart, { text: basePromptText }],
       config: {
@@ -674,15 +674,23 @@ Also extract:
           ],
         },
       },
+    }).then((response) => {
+      const textResponse = response.text;
+      if (!textResponse) throw new Error("Empty response from the extraction model during contract analysis.");
+      console.log("Raw Gemini Contract Scan Output:", textResponse);
+      return JSON.parse(textResponse.trim());
     });
 
-    const textResponse = response.text;
-    if (!textResponse) throw new Error("Empty response from the extraction model during contract analysis.");
-    console.log("Raw Gemini Contract Scan Output:", textResponse);
-    const parsedData = JSON.parse(textResponse.trim());
-    // Best-effort second pass for the per-trade table, kept separate so a glitch
-    // there can't sink the (proven-stable) baseline extraction.
-    parsedData.trade_rules = await extractTradeTable(ai, documentPart, tradeList);
+    // Run the baseline extraction and the best-effort trade-table pass CONCURRENTLY:
+    // they read the same document independently, so parallelizing roughly halves
+    // wall-clock and keeps the scan within the serverless timeout. extractTradeTable
+    // never throws (it degrades to []); only a baseline failure rejects here → the
+    // outer catch fails closed.
+    const [parsedData, tradeRules] = await Promise.all([
+      baselinePromise,
+      extractTradeTable(ai, documentPart, tradeList),
+    ]);
+    parsedData.trade_rules = tradeRules;
     return { status: 200, body: { success: true, data: parsedData, simulated: false } };
   } catch (extractionError: any) {
     // FAIL CLOSED — surface the failure instead of inventing contract baselines.
