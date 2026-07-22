@@ -52,3 +52,17 @@ export function isNonEmptyRule(rule: TradeRule | undefined): boolean {
   if (!rule) return false;
   return Boolean(rule.umbrella || rule.professionalLiability || rule.pollutionLiability);
 }
+
+/**
+ * Map a free-text trade label (e.g. a row from a scanned contract table) to the
+ * closest canonical trade name, or null when there's no confident match.
+ * Matching is case/space/punctuation-insensitive and exact on the normalized
+ * form — an unrecognized label is dropped rather than mis-assigned to a trade.
+ */
+export function matchCanonicalTrade(label: string, canonical: string[]): string | null {
+  const norm = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const n = norm(label);
+  if (!n) return null;
+  for (const c of canonical) if (norm(c) === n) return c;
+  return null;
+}

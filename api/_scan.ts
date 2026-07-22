@@ -48,6 +48,31 @@ const SAMPLE_CONTRACT_FILES = new Set([
   "Skyline_Apartments_Exhibit_Section_A3.pdf",
 ]);
 
+// Canonical trade names the app models (mirrors settingsService.DEFAULT_TRADES).
+// Passed into the contract-scan prompt so any per-trade table maps onto them.
+const CANONICAL_TRADES = [
+  "Environmental",
+  "Surveying",
+  "Earthwork",
+  "Concrete (Precast)",
+  "Concrete (with Crane)",
+  "Concrete (Standard)",
+  "Masonry",
+  "Rough Carpentry (with Crane)",
+  "Rough Carpentry (Standard)",
+  "Siding",
+  "Roofing",
+  "Windows",
+  "Drywall",
+  "Pool",
+  "Elevators",
+  "Fire Sprinkler",
+  "Plumbing",
+  "HVAC",
+  "Electrical",
+  "Other Trades",
+];
+
 function isSampleCoi(fileName?: string): boolean {
   return !!fileName && SAMPLE_COI_FILES.has(fileName);
 }
@@ -245,6 +270,27 @@ function buildSampleContractData(fileName: string) {
     employers_liability_disease_person: elDiseasePersonVal,
     employers_liability_disease_limit: elDiseaseLimitVal,
     workers_comp: wcRequiredVal,
+    pollution_liability: 2000000,
+    professional_liability: 0,
+    additional_insured_required: true,
+    additional_insured_names: [pName],
+    endorsements: {
+      waiver_of_subrogation: true,
+      primary_noncontributory: true,
+      project_aggregate: true,
+      completed_ops_ai: true,
+    },
+    trade_rules: [
+      { trade: "Earthwork", umbrella: 5000000, professional_liability: 2000000, pollution_liability: 0 },
+      { trade: "Concrete (with Crane)", umbrella: 10000000, professional_liability: 0, pollution_liability: 0 },
+      { trade: "Roofing", umbrella: 5000000, professional_liability: 0, pollution_liability: 0 },
+      { trade: "Elevators", umbrella: 10000000, professional_liability: 0, pollution_liability: 0 },
+      { trade: "Fire Sprinkler", umbrella: 5000000, professional_liability: 2000000, pollution_liability: 0 },
+      { trade: "Plumbing", umbrella: 5000000, professional_liability: 2000000, pollution_liability: 0 },
+      { trade: "HVAC", umbrella: 5000000, professional_liability: 2000000, pollution_liability: 0 },
+      { trade: "Electrical", umbrella: 5000000, professional_liability: 2000000, pollution_liability: 0 },
+      { trade: "Other Trades", umbrella: 1000000, professional_liability: 0, pollution_liability: 0 },
+    ],
   };
 }
 
@@ -434,12 +480,72 @@ Strictly return ONLY the requested JSON schema.`;
   }
 }
 
+/** Parse a newline + pipe-delimited trade table into structured rows. */
+function parseTradeRulesText(text: unknown): any[] {
+  if (typeof text !== "string" || !text.trim()) return [];
+  const num = (s: string) => {
+    const d = (s || "").replace(/[^0-9]/g, "").slice(0, 10);
+    return d ? parseInt(d, 10) : 0;
+  };
+  const rows: any[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const cells = line.split("|").map((c) => c.trim());
+    if (cells.length < 2 || !cells[0]) continue;
+    rows.push({
+      trade: cells[0],
+      umbrella: num(cells[1]),
+      professional_liability: num(cells[2] ?? ""),
+      pollution_liability: num(cells[3] ?? ""),
+    });
+  }
+  return rows;
+}
+
+/**
+ * Best-effort second pass for the per-trade escalation table. It returns the
+ * table as FREE TEXT (LLMs are stable at that, unlike being forced into dozens
+ * of nested numeric JSON slots, which can trigger a digit-repetition loop that
+ * truncates the whole response), then parses it deterministically. Any failure
+ * degrades to [] so the proven-stable baseline extraction still succeeds.
+ */
+async function extractTradeTable(ai: GoogleGenAI, documentPart: any, tradeList: string[]): Promise<any[]> {
+  try {
+    const prompt = `The attached exhibit may contain a per-trade table of higher Excess/Umbrella and/or Professional liability limits (a "Scopes Required to Provide Additional Coverage"-style table). Return it in "trade_rules_text" as ONE LINE PER LISTED TRADE, pipe-delimited:
+
+<trade> | <excess/umbrella whole dollars or 0> | <professional whole dollars or 0> | <pollution whole dollars or 0>
+
+Rules: amounts are plain digits only (e.g. 5000000), use 0 where a column is blank, and set <trade> to EXACTLY one of these canonical names (closest match; use "Other Trades" for an "all other trades" row). If there is no per-trade table, return an empty string.
+Canonical trades:
+${tradeList.map((t) => `- ${t}`).join("\n")}`;
+    const res = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: [documentPart, { text: prompt }],
+      config: {
+        responseMimeType: "application/json",
+        maxOutputTokens: 4096,
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: { trade_rules_text: { type: Type.STRING } },
+          required: ["trade_rules_text"],
+        },
+      },
+    });
+    const t = res.text;
+    if (!t) return [];
+    return parseTradeRulesText(JSON.parse(t.trim()).trade_rules_text);
+  } catch (err: any) {
+    console.warn("Trade-table extraction skipped:", err?.message || err);
+    return [];
+  }
+}
+
 /**
  * Scan a prime contract exhibit and extract the required baseline insurance
  * thresholds. Fails CLOSED like scanCoi; only the sandbox exhibits are simulated.
  */
 export async function scanContract(payload: any): Promise<ScanResult> {
-  const { fileData, mimeType, fileName } = payload || {};
+  const { fileData, mimeType, fileName, trades } = payload || {};
+  const tradeList: string[] = Array.isArray(trades) && trades.length > 0 ? trades : CANONICAL_TRADES;
 
   if (!fileData) {
     return { status: 400, body: { error: "No contract document data provided for AI scan" } };
@@ -482,12 +588,28 @@ export async function scanContract(payload: any): Promise<ScanResult> {
       },
     };
 
-    const systemInstruction = `You are an expert construction insurance risk auditor. Your task is to extract required contractor baseline liability insurance limits from an owner-contractor legal agreement exhibit (typically an AIA Document Exhibit A).
-CRITICAL INSTRUCTION: You must ignore Article A.2 'Owner's Insurance' entirely. Do not extract property, builder's risk, or owner liability values. You must focus exclusively on Article A.3 'Contractor's Required Insurance Coverage'. Extract the exact numeric dollar thresholds for Each Occurrence, General Aggregate, Products-Completed Operations, Automobile Combined Single Limit, Umbrella/Excess Liability, and the three Employers' Liability limits. If a field cannot be found or is marked as statutory/standard, default to the closest logical corporate baseline or return null.`;
+    const systemInstruction = `You are an expert construction insurance auditor. Extract the insurance the CONTRACTOR/SUBCONTRACTOR is required to carry from an owner-contractor or subcontract agreement exhibit. These appear in several formats (an AIA Exhibit A "Contractor's Required Insurance", a "Subcontractor's Insurance Requirements" exhibit with lettered sections A-L, and/or a summary limits table).
+
+IGNORE any coverage the OWNER or CONTRACTOR carries (e.g. Builder's Risk, "Owner's Insurance"). Extract ONLY what the subcontractor must provide.
+
+Extract these as exact numeric USD limits (use 0 when a coverage is not required as a universal baseline for every subcontractor):
+- General Liability: each-occurrence, general aggregate, and products-completed aggregate
+- Automobile: combined single limit
+- Umbrella / Excess: each-occurrence baseline
+- Employers' Liability: the three limits; and whether Workers' Compensation is required (workers_comp)
+- Pollution Liability baseline
+- Professional Liability baseline — but if it is only required for certain design-build trades (not for everyone), set the baseline to 0 and capture the per-trade amounts in trade_rules instead
+
+Also extract:
+- additional_insured_required (boolean) and additional_insured_names: the entities the subcontractor must name as additional insured (e.g. the general contractor). Return [] if none named.
+- endorsements the subcontractor must carry (booleans): waiver_of_subrogation; primary_noncontributory (coverage is primary and non-contributory); project_aggregate (a dedicated per-project aggregate applies); completed_ops_ai (additional insured for COMPLETED operations, e.g. CG 20 37).`;
+
+    const basePromptText =
+      "Scan the attached contract / subcontract insurance exhibit and populate the schedule of the subcontractor's required insurance.";
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
-      contents: [documentPart, { text: "Scan the attached draft contract agreement and populate the insurance baseline thresholds schedule." }],
+      contents: [documentPart, { text: basePromptText }],
       config: {
         systemInstruction,
         responseMimeType: "application/json",
@@ -495,15 +617,29 @@ CRITICAL INSTRUCTION: You must ignore Article A.2 'Owner's Insurance' entirely. 
           type: Type.OBJECT,
           properties: {
             projectName: { type: Type.STRING },
-            gl_occurrence: { type: Type.NUMBER },
-            gl_aggregate: { type: Type.NUMBER },
-            gl_products_completed: { type: Type.NUMBER },
-            auto_limit: { type: Type.NUMBER },
-            umbrella_limit: { type: Type.NUMBER },
-            employers_liability_accident: { type: Type.NUMBER },
-            employers_liability_disease_person: { type: Type.NUMBER },
-            employers_liability_disease_limit: { type: Type.NUMBER },
+            gl_occurrence: { type: Type.INTEGER },
+            gl_aggregate: { type: Type.INTEGER },
+            gl_products_completed: { type: Type.INTEGER },
+            auto_limit: { type: Type.INTEGER },
+            umbrella_limit: { type: Type.INTEGER },
+            employers_liability_accident: { type: Type.INTEGER },
+            employers_liability_disease_person: { type: Type.INTEGER },
+            employers_liability_disease_limit: { type: Type.INTEGER },
             workers_comp: { type: Type.BOOLEAN },
+            pollution_liability: { type: Type.INTEGER, description: "Baseline pollution liability required of every sub (0 if none / conditional-only)." },
+            professional_liability: { type: Type.INTEGER, description: "Baseline professional liability required of every sub (0 if only trade-specific)." },
+            additional_insured_required: { type: Type.BOOLEAN },
+            additional_insured_names: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Entities the sub must name as additional insured." },
+            endorsements: {
+              type: Type.OBJECT,
+              description: "Endorsements the subcontractor is required to carry.",
+              properties: {
+                waiver_of_subrogation: { type: Type.BOOLEAN },
+                primary_noncontributory: { type: Type.BOOLEAN },
+                project_aggregate: { type: Type.BOOLEAN },
+                completed_ops_ai: { type: Type.BOOLEAN },
+              },
+            },
           },
           required: [
             "projectName",
@@ -516,6 +652,11 @@ CRITICAL INSTRUCTION: You must ignore Article A.2 'Owner's Insurance' entirely. 
             "employers_liability_disease_person",
             "employers_liability_disease_limit",
             "workers_comp",
+            "pollution_liability",
+            "professional_liability",
+            "additional_insured_required",
+            "additional_insured_names",
+            "endorsements",
           ],
         },
       },
@@ -525,6 +666,9 @@ CRITICAL INSTRUCTION: You must ignore Article A.2 'Owner's Insurance' entirely. 
     if (!textResponse) throw new Error("Empty response from the extraction model during contract analysis.");
     console.log("Raw Gemini Contract Scan Output:", textResponse);
     const parsedData = JSON.parse(textResponse.trim());
+    // Best-effort second pass for the per-trade table, kept separate so a glitch
+    // there can't sink the (proven-stable) baseline extraction.
+    parsedData.trade_rules = await extractTradeTable(ai, documentPart, tradeList);
     return { status: 200, body: { success: true, data: parsedData, simulated: false } };
   } catch (extractionError: any) {
     // FAIL CLOSED — surface the failure instead of inventing contract baselines.

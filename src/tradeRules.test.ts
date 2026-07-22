@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { resolveRequiredCoverage, isNonEmptyRule } from "./tradeRules";
+import { resolveRequiredCoverage, isNonEmptyRule, matchCanonicalTrade } from "./tradeRules";
+
+const TRADES = [
+  "Concrete (Precast)",
+  "Concrete (with Crane)",
+  "Concrete (Standard)",
+  "Rough Carpentry (with Crane)",
+  "Fire Sprinkler",
+  "HVAC",
+  "Other Trades",
+];
 
 const baseReq = { umbrella_limit: 1_000_000, professional_liability: 0, pollution_liability: 0 };
 
@@ -48,5 +58,24 @@ describe("isNonEmptyRule", () => {
   it("is true when any field is set", () => {
     expect(isNonEmptyRule({ umbrella: 5_000_000 })).toBe(true);
     expect(isNonEmptyRule({ pollutionLiability: 2_000_000 })).toBe(true);
+  });
+});
+
+describe("matchCanonicalTrade", () => {
+  it("matches an exact canonical name", () => {
+    expect(matchCanonicalTrade("HVAC", TRADES)).toBe("HVAC");
+  });
+
+  it("ignores case, spacing, and punctuation differences", () => {
+    expect(matchCanonicalTrade("fire sprinkler", TRADES)).toBe("Fire Sprinkler");
+    expect(matchCanonicalTrade("Concrete(with Crane)", TRADES)).toBe("Concrete (with Crane)");
+    expect(matchCanonicalTrade("  concrete (precast) ", TRADES)).toBe("Concrete (Precast)");
+  });
+
+  it("returns null (drops) an unrecognized label rather than mis-assigning", () => {
+    // "Concrete" alone is ambiguous across three variants → no confident match.
+    expect(matchCanonicalTrade("Concrete", TRADES)).toBeNull();
+    expect(matchCanonicalTrade("Landscaping", TRADES)).toBeNull();
+    expect(matchCanonicalTrade("", TRADES)).toBeNull();
   });
 });

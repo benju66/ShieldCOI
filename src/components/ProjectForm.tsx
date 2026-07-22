@@ -3,6 +3,39 @@ import { FolderPlus, HelpCircle, X, Upload, FileText, RefreshCw } from "lucide-r
 import { Project, EndorsementRequirements } from "../types";
 import CurrencyInput from "./CurrencyInput";
 import { useSettings } from "../SettingsContext";
+import { TradeRule, matchCanonicalTrade } from "../tradeRules";
+
+/**
+ * Convert the scanned per-trade rows (canonical-name best-effort) into a
+ * `{ trade: TradeRule }` map, dropping unrecognized trades and all-zero rows.
+ */
+function mapScannedTradeRules(
+  rows: any,
+  canonicalTrades: string[]
+): Record<string, TradeRule> {
+  const map: Record<string, TradeRule> = {};
+  if (!Array.isArray(rows)) return map;
+  // Coerce to a sane whole-dollar amount: strip non-digits, cap length, clamp to
+  // $1B. Guards against a model glitch producing a malformed or absurd number.
+  const sanitizeLimit = (v: any): number => {
+    const n =
+      typeof v === "number" ? v : parseInt(String(v ?? "").replace(/[^0-9]/g, "").slice(0, 10), 10);
+    return Number.isFinite(n) && n > 0 ? Math.min(Math.round(n), 1_000_000_000) : 0;
+  };
+  for (const r of rows) {
+    const trade = matchCanonicalTrade(r?.trade ?? "", canonicalTrades);
+    if (!trade) continue;
+    const rule: TradeRule = {
+      umbrella: sanitizeLimit(r?.umbrella),
+      professionalLiability: sanitizeLimit(r?.professional_liability),
+      pollutionLiability: sanitizeLimit(r?.pollution_liability),
+    };
+    if (rule.umbrella || rule.professionalLiability || rule.pollutionLiability) {
+      map[trade] = rule;
+    }
+  }
+  return map;
+}
 
 interface ProjectFormProps {
   isOpen: boolean;
@@ -12,7 +45,7 @@ interface ProjectFormProps {
 }
 
 export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: ProjectFormProps) {
-  const { settings } = useSettings();
+  const { settings, updateSettings } = useSettings();
   const [name, setName] = useState("");
   const [number, setNumber] = useState("");
   const [targetDate, setTargetDate] = useState("2026-12-31");
@@ -34,6 +67,9 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
   const [additionalInsuredNames, setAdditionalInsuredNames] = useState<string[]>([]);
   const [acceptBlanketAi, setAcceptBlanketAi] = useState(true);
   const [endorsementReqs, setEndorsementReqs] = useState<EndorsementRequirements>({});
+  // Per-trade escalations detected from a scanned exhibit (org-wide; applied on demand).
+  const [detectedTradeRules, setDetectedTradeRules] = useState<Record<string, TradeRule>>({});
+  const [appliedTradeRules, setAppliedTradeRules] = useState(false);
   const [expiredTemplate, setExpiredTemplate] = useState(() => settings.email_templates.expired_template);
   const [insufficientTemplate, setInsufficientTemplate] = useState(() => settings.email_templates.insufficient_template);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
@@ -41,6 +77,8 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
   useEffect(() => {
     if (isOpen) {
       const d = settings.default_requirements;
+      setDetectedTradeRules({});
+      setAppliedTradeRules(false);
       if (projectToEdit) {
         setName(projectToEdit.name || "");
         setNumber(projectToEdit.number || "");
@@ -99,6 +137,32 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
   const [loading, setLoading] = useState(false);
   const [loadingText, setLoadingText] = useState("");
 
+  /** Apply the wider contract-scan fields (beyond the base limits) to the form. */
+  const applyExtractedExtras = (extracted: any) => {
+    if (typeof extracted.pollution_liability === "number") setPollutionBaseline(extracted.pollution_liability);
+    if (typeof extracted.professional_liability === "number") setProfessionalBaseline(extracted.professional_liability);
+    if (typeof extracted.additional_insured_required === "boolean") setAdditionalInsuredRequired(extracted.additional_insured_required);
+    if (Array.isArray(extracted.additional_insured_names)) {
+      setAdditionalInsuredNames(extracted.additional_insured_names.filter((n: any) => typeof n === "string" && n.trim()));
+    }
+    if (extracted.endorsements && typeof extracted.endorsements === "object") {
+      setEndorsementReqs({
+        waiver_of_subrogation: !!extracted.endorsements.waiver_of_subrogation,
+        primary_noncontributory: !!extracted.endorsements.primary_noncontributory,
+        project_aggregate: !!extracted.endorsements.project_aggregate,
+        completed_ops_ai: !!extracted.endorsements.completed_ops_ai,
+      });
+    }
+    setDetectedTradeRules(mapScannedTradeRules(extracted.trade_rules, settings.trades));
+    setAppliedTradeRules(false);
+  };
+
+  /** Merge the detected per-trade escalations into the org-wide trade rules. */
+  const handleApplyTradeRules = () => {
+    updateSettings({ ...settings, trade_rules: { ...settings.trade_rules, ...detectedTradeRules } });
+    setAppliedTradeRules(true);
+  };
+
   const processContractFile = async (file: File) => {
     if (loading) return;
 
@@ -133,6 +197,7 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
               fileData: base64Bytes,
               mimeType: file.type || "application/pdf",
               fileName: file.name,
+              trades: settings.trades,
             }),
           });
 
@@ -170,6 +235,7 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
             if (typeof extracted.employers_liability_disease_person === "number") setElDiseasePerson(extracted.employers_liability_disease_person);
             if (typeof extracted.employers_liability_disease_limit === "number") setElDiseaseLimit(extracted.employers_liability_disease_limit);
             if (typeof extracted.workers_comp === "boolean") setWcRequired(extracted.workers_comp);
+            applyExtractedExtras(extracted);
 
             setLoading(false);
           } else {
@@ -209,6 +275,7 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
           fileData: "U0FNUExFX0RBVEE=",
           mimeType: "application/pdf",
           fileName: sampleName,
+          trades: settings.trades,
         }),
       });
 
@@ -230,6 +297,7 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
         if (typeof extracted.employers_liability_disease_person === "number") setElDiseasePerson(extracted.employers_liability_disease_person);
         if (typeof extracted.employers_liability_disease_limit === "number") setElDiseaseLimit(extracted.employers_liability_disease_limit);
         if (typeof extracted.workers_comp === "boolean") setWcRequired(extracted.workers_comp);
+        applyExtractedExtras(extracted);
 
         setLoading(false);
       } else {
@@ -406,6 +474,51 @@ export default function ProjectForm({ isOpen, onClose, onSave, projectToEdit }: 
                 Notice: This is an experimental feature utilizing generative AI. Always cross-reference extracted metrics against your hardcopy contract agreements before finalizing project baselines.
               </p>
             </div>
+
+            {/* Detected trade-specific escalations (from a scanned exhibit) */}
+            {Object.keys(detectedTradeRules).length > 0 && (
+              <div id="detected-trade-rules-panel" className="bg-indigo-50/60 border border-indigo-200 rounded-lg p-3.5 space-y-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-[11px] font-bold text-slate-800">
+                      Trade-specific coverage detected ({Object.keys(detectedTradeRules).length})
+                    </p>
+                    <p className="text-[10px] text-slate-500 leading-snug">
+                      Per-trade excess / professional limits from the scanned exhibit. These are org-wide trade rules (applied across all projects), not just this one.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleApplyTradeRules}
+                    disabled={appliedTradeRules}
+                    className={`flex-shrink-0 px-2.5 py-1 rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                      appliedTradeRules
+                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-default"
+                        : "bg-indigo-600 hover:bg-indigo-700 text-white"
+                    }`}
+                  >
+                    {appliedTradeRules ? "Applied ✓" : "Apply to trade rules"}
+                  </button>
+                </div>
+                <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                  {Object.entries(detectedTradeRules).map(([trade, rule]: [string, TradeRule]) => {
+                    const parts: string[] = [];
+                    if (rule.umbrella) parts.push(`Umbrella $${rule.umbrella.toLocaleString()}`);
+                    if (rule.professionalLiability) parts.push(`Prof $${rule.professionalLiability.toLocaleString()}`);
+                    if (rule.pollutionLiability) parts.push(`Poll $${rule.pollutionLiability.toLocaleString()}`);
+                    return (
+                      <div
+                        key={trade}
+                        className="flex items-center justify-between gap-2 text-[10px] bg-white border border-slate-200 rounded px-2 py-1"
+                      >
+                        <span className="font-semibold text-slate-700 truncate">{trade}</span>
+                        <span className="font-mono text-slate-600 flex-shrink-0">{parts.join(" · ")}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Project Details */}
             <div className="space-y-2.5">
