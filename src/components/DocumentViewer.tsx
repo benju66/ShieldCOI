@@ -248,16 +248,23 @@ export default function DocumentViewer({ fileData, fileMime, locations = [], fie
         const total = Math.min(pdf.numPages, 6);
         const out: RenderedPage[] = [];
         const derivedAll: FieldLocation[] = [];
+        // Rasterize well above display size: the viewer's CSS zoom goes to 5x, so a
+        // low-res raster turns blurry the moment the reviewer zooms in on a limit.
+        // 2x the device pixel ratio (min 3, max 4) keeps text crisp through typical
+        // zoom levels without the canvas memory of a full 5x render; 0.92 JPEG
+        // avoids compression fuzz on form text while staying far smaller than PNG
+        // for scanned (photographic) certificates.
+        const renderScale = Math.min(4, Math.max(3, 2 * (window.devicePixelRatio || 1)));
         for (let i = 1; i <= total; i++) {
           const page = await pdf.getPage(i);
-          const viewport = page.getViewport({ scale: 2 });
+          const viewport = page.getViewport({ scale: renderScale });
           const canvas = document.createElement("canvas");
           canvas.width = viewport.width;
           canvas.height = viewport.height;
           const ctx = canvas.getContext("2d");
           if (!ctx) continue;
           await page.render({ canvasContext: ctx, viewport }).promise;
-          out.push({ pageNumber: i, dataUrl: canvas.toDataURL("image/jpeg", 0.85) });
+          out.push({ pageNumber: i, dataUrl: canvas.toDataURL("image/jpeg", 0.92) });
           try {
             const vp1 = page.getViewport({ scale: 1 });
             const tc = await page.getTextContent();
