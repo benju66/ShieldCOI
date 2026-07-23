@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { X, Check, ShieldCheck, ShieldAlert, FileWarning, Eye } from "lucide-react";
 import { Project, EndorsementFacts } from "../types";
-import { verifyCompliance, isNamedAdditionalInsured } from "../complianceEngine";
+import { verifyCompliance, isNamedAdditionalInsured, matchEntityNames } from "../complianceEngine";
 import { formatUSD } from "../utils/currency";
 import DocumentViewer, { ACORD25_FIELD_TEMPLATE } from "./DocumentViewer";
 import CurrencyInput from "./CurrencyInput";
@@ -992,9 +992,11 @@ export default function VerificationDrawer({
                     (project.additional_insured_names || [])
                       .filter((n) => (n || "").trim())
                       .map((reqName, idx) => {
-                        const named = isNamedAdditionalInsured(reqName, activeData.additional_insured_named || []);
-                        const blanketOk = !named && !!activeData.additional_insured_blanket && project.accept_blanket_ai !== false;
-                        const status = named ? "named" : blanketOk ? "blanket" : "missing";
+                        const namedList = activeData.additional_insured_named || [];
+                        const named = isNamedAdditionalInsured(reqName, namedList);
+                        const similar = !named && namedList.some((n) => matchEntityNames(reqName, n) === "partial");
+                        const blanketOk = !named && !similar && !!activeData.additional_insured_blanket && project.accept_blanket_ai !== false;
+                        const status = named ? "named" : similar ? "similar" : blanketOk ? "blanket" : "missing";
                         return (
                           <div
                             key={`ai-${idx}`}
@@ -1002,7 +1004,7 @@ export default function VerificationDrawer({
                             className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
                               status === "named"
                                 ? "bg-slate-50 border-slate-200"
-                                : status === "blanket"
+                                : status === "blanket" || status === "similar"
                                 ? "bg-amber-50 border-amber-200 text-amber-950"
                                 : "bg-red-50 border-red-200 text-red-950"
                             }`}
@@ -1014,15 +1016,27 @@ export default function VerificationDrawer({
                             <div className="col-span-4 text-right">
                               <p
                                 className={`text-[11px] font-bold ${
-                                  status === "named" ? "text-emerald-700" : status === "blanket" ? "text-amber-700" : "text-red-700"
+                                  status === "named"
+                                    ? "text-emerald-700"
+                                    : status === "blanket" || status === "similar"
+                                    ? "text-amber-700"
+                                    : "text-red-700"
                                 }`}
                               >
-                                {status === "named" ? "Named" : status === "blanket" ? "Blanket — verify endorsement" : "Not listed"}
+                                {status === "named"
+                                  ? "Named"
+                                  : status === "similar"
+                                  ? "Similar name — verify"
+                                  : status === "blanket"
+                                  ? "Blanket — verify endorsement"
+                                  : "Not listed"}
                               </p>
                             </div>
                             <div className="col-span-1 flex justify-center">
                               {status === "named" ? (
                                 <Check className="h-4 w-4 text-emerald-600" />
+                              ) : status === "similar" ? (
+                                <span className="text-[10px] text-amber-600 font-bold uppercase" title="A similar but not identical name appears on the certificate — verify it refers to the same entity">⚠</span>
                               ) : status === "blanket" ? (
                                 <span className="text-[10px] text-amber-600 font-bold uppercase" title="Blanket 'as required by written contract' — verify endorsement">⚠</span>
                               ) : (

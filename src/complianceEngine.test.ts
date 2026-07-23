@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { verifyCompliance, normalizeEntity, isNamedAdditionalInsured } from "./complianceEngine";
+import { verifyCompliance, normalizeEntity, isNamedAdditionalInsured, matchEntityNames } from "./complianceEngine";
 import { Project, ProjectRequirements } from "./types";
 
 // ---------------------------------------------------------------------------
@@ -591,5 +591,150 @@ describe("isNamedAdditionalInsured", () => {
 
   it("returns false for an empty required name", () => {
     expect(isNamedAdditionalInsured("", ["Evergreen Development LLC"])).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Token-based entity matching (wave 1 hardening)
+// ---------------------------------------------------------------------------
+
+describe("matchEntityNames", () => {
+  it("matches identical names after suffix/punctuation normalization", () => {
+    expect(matchEntityNames("ABC Corp.", "The ABC Company, LLC")).toBe("match");
+    expect(matchEntityNames("Evergreen Development LLC", "Evergreen Development, Inc.")).toBe("match");
+  });
+
+  it("matches a multi-word subset regardless of extra words", () => {
+    expect(matchEntityNames("Evergreen Development", "Evergreen Development Group Holdings")).toBe("match");
+  });
+
+  it("never matches across word boundaries (raw-substring regression)", () => {
+    // Old substring logic: "art electric" IS a substring of "smart electrical…" — a false pass.
+    expect(matchEntityNames("Art Electric", "Smart Electrical Contractors")).toBe("none");
+  });
+
+  it("returns partial when only a single word is shared as a subset", () => {
+    expect(matchEntityNames("ABC Corp", "ABC Roofing")).toBe("partial");
+  });
+
+  it("returns none for disjoint names", () => {
+    expect(matchEntityNames("Evergreen Development", "Summit Builders")).toBe("none");
+  });
+
+  it("returns none when either side is empty or suffix-only", () => {
+    expect(matchEntityNames("", "Evergreen Development")).toBe("none");
+    expect(matchEntityNames("The LLC", "Evergreen Development")).toBe("none");
+  });
+});
+
+describe("isNamedAdditionalInsured — token matching", () => {
+  it("no longer passes cross-boundary substrings", () => {
+    expect(isNamedAdditionalInsured("Art Electric", ["Smart Electrical Contractors"])).toBe(false);
+  });
+
+  it("does not treat a single shared word as a confident match", () => {
+    expect(isNamedAdditionalInsured("ABC Corp", ["ABC Roofing"])).toBe(false);
+  });
+
+  it("still passes a confident multi-word subset", () => {
+    expect(isNamedAdditionalInsured("Evergreen Development", ["Evergreen Development Group"])).toBe(true);
+  });
+});
+
+describe("verifyCompliance — similar-name additional insured advisory", () => {
+  const project = makeProject({
+    additional_insured_required: true,
+    additional_insured_names: ["ABC Corp"],
+  });
+
+  it("emits a non-failing verify advisory when only a similar name appears", () => {
+    const result = verifyCompliance(
+      project,
+      makeCoi({ additional_insured_named: ["ABC Roofing"], additional_insured_blanket: false }),
+      "Other Trades",
+      NOW
+    );
+    expect(hasError(result.errors, "verify it refers to the same entity")).toBe(true);
+    expect(hasError(result.errors, "not listed as an additional insured")).toBe(false);
+    expect(result.status).toBe("Compliant");
+  });
+
+  it("prefers the similar-name advisory over the blanket advisory", () => {
+    const result = verifyCompliance(
+      project,
+      makeCoi({ additional_insured_named: ["ABC Roofing"], additional_insured_blanket: true }),
+      "Other Trades",
+      NOW
+    );
+    expect(hasError(result.errors, "verify it refers to the same entity")).toBe(true);
+    expect(hasError(result.errors, "relying on blanket")).toBe(false);
+  });
+
+  it("a confident multi-word match still passes silently", () => {
+    const multiWord = makeProject({
+      additional_insured_required: true,
+      additional_insured_names: ["Evergreen Development"],
+    });
+    const result = verifyCompliance(
+      multiWord,
+      makeCoi({ additional_insured_named: ["Evergreen Development Group Holdings"] }),
+      "Other Trades",
+      NOW
+    );
+    expect(hasError(result.errors, "Additional Insured")).toBe(false);
+    expect(result.status).toBe("Compliant");
+  });
+
+  it("flags a single-shared-word insured name for verification (advisory only)", () => {
+    const result = verifyCompliance(
+      makeProject(),
+      makeCoi({ insured_name: "ABC" }),
+      "Other Trades",
+      NOW,
+      {},
+      "ABC Roofing LLC"
+    );
+    expect(hasError(result.errors, "does not match the enrolled vendor")).toBe(true);
+    expect(result.status).toBe("Compliant");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unreadable expiration dates (wave 1 hardening — fail closed)
+// ---------------------------------------------------------------------------
+
+describe("verifyCompliance — unreadable expiration date fails closed", () => {
+  const expectFailsClosed = (badDate: string) => {
+    const result = verifyCompliance(makeProject(), makeCoi({ policy_expiration_date: badDate }), "Other Trades", NOW);
+    expect(hasError(result.errors, "could not be read as a valid date")).toBe(true);
+    expect(result.status).toBe("Insufficient Coverage");
+  };
+
+  it("fails a missing (empty) expiration date", () => {
+    expectFailsClosed("");
+  });
+
+  it("fails a garbled expiration date", () => {
+    expectFailsClosed("not-a-date");
+  });
+
+  it("fails a non-ISO date format rather than guessing", () => {
+    expectFailsClosed("06/11/2027");
+  });
+
+  it("fails an impossible calendar date", () => {
+    expectFailsClosed("2026-13-45");
+  });
+
+  it("does not mislabel an unreadable date as Expired", () => {
+    const result = verifyCompliance(makeProject(), makeCoi({ policy_expiration_date: "" }), "Other Trades", NOW);
+    expect(result.status).not.toBe("Expired");
+    expect(hasError(result.errors, "Policy expired on")).toBe(false);
+  });
+
+  it("still accepts a valid future ISO date", () => {
+    const result = verifyCompliance(makeProject(), makeCoi({ policy_expiration_date: "2027-06-11" }), "Other Trades", NOW);
+    expect(hasError(result.errors, "could not be read")).toBe(false);
+    expect(result.status).toBe("Compliant");
   });
 });

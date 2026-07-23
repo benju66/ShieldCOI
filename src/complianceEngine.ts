@@ -14,17 +14,47 @@ export function normalizeEntity(s: string): string {
     .trim();
 }
 
+/** How confidently two entity names refer to the same company. */
+export type EntityMatch = "match" | "partial" | "none";
+
+/**
+ * Compare two entity names on WHOLE normalized tokens (never raw substrings —
+ * "Art Electric" must not match inside "Smart Electrical"):
+ * - "match":   same token set, or one is a multi-word (≥2 tokens) subset of the
+ *              other ("Evergreen Development" ⊆ "Evergreen Development Group").
+ * - "partial": a single-token subset ("ABC" vs "ABC Roofing") — too thin to
+ *              pass on its own; surfaced to the reviewer as a verify advisory.
+ * - "none":    anything else.
+ */
+export function matchEntityNames(a: string, b: string): EntityMatch {
+  const ta = normalizeEntity(a).split(" ").filter(Boolean);
+  const tb = normalizeEntity(b).split(" ").filter(Boolean);
+  if (ta.length === 0 || tb.length === 0) return "none";
+  const [small, large] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+  const largeSet = new Set(large);
+  if (!small.every((t) => largeSet.has(t))) return "none";
+  if (small.length === large.length) return "match"; // same token set
+  return small.length >= 2 ? "match" : "partial";
+}
+
+/** The strongest match level for a required name across the certificate's named list. */
+function bestEntityMatch(reqName: string, namedList: string[]): EntityMatch {
+  let best: EntityMatch = "none";
+  for (const n of namedList) {
+    const level = matchEntityNames(reqName, n);
+    if (level === "match") return "match";
+    if (level === "partial") best = "partial";
+  }
+  return best;
+}
+
 /**
  * True when a required entity appears in the names extracted as Additional
- * Insured on the certificate (fuzzy, suffix/punctuation-insensitive).
+ * Insured on the certificate (fuzzy on suffixes/punctuation/word order, but a
+ * confident whole-token match — a "partial" similarity does not qualify).
  */
 export function isNamedAdditionalInsured(reqName: string, namedList: string[] = []): boolean {
-  const reqNorm = normalizeEntity(reqName);
-  if (!reqNorm) return false;
-  return namedList.some((n) => {
-    const nNorm = normalizeEntity(n);
-    return nNorm.length > 0 && (nNorm.includes(reqNorm) || reqNorm.includes(nNorm));
-  });
+  return bestEntityMatch(reqName, namedList) === "match";
 }
 
 /**
@@ -74,7 +104,7 @@ export function verifyCompliance(
   // is blank (e.g. legacy callers that don't pass the vendor name).
   const insuredNorm = normalizeEntity(coi.insured_name || "");
   const legalNorm = normalizeEntity(subcontractorLegalName || "");
-  if (insuredNorm && legalNorm && !insuredNorm.includes(legalNorm) && !legalNorm.includes(insuredNorm)) {
+  if (insuredNorm && legalNorm && matchEntityNames(coi.insured_name, subcontractorLegalName) !== "match") {
     errors.push(
       `Insured Name: certificate is issued to "${coi.insured_name}", which does not match the enrolled vendor "${subcontractorLegalName}" — verify this certificate belongs to this vendor.`
     );
@@ -181,12 +211,21 @@ export function verifyCompliance(
     }
   }
 
-  // 12. Expiration Check
-  const expiration = new Date(coi.policy_expiration_date);
+  // 12. Expiration Check — fails CLOSED on an unreadable date. An Invalid Date
+  // compares false against every operator, so without this guard a blank or
+  // garbled expiration would sail through as Compliant with zero errors.
+  const expDateStr = (coi.policy_expiration_date || "").trim();
+  const expiration = new Date(expDateStr);
   const current = new Date(currentDateStr);
+  const dateReadable = /^\d{4}-\d{2}-\d{2}$/.test(expDateStr) && !isNaN(expiration.getTime());
 
-  const isExpired = expiration <= current;
-  if (isExpired) {
+  let isExpired = false;
+  if (!dateReadable) {
+    errors.push(
+      `Policy expiration date ${expDateStr ? `"${expDateStr}"` : "is missing"} — could not be read as a valid date (YYYY-MM-DD). Coverage cannot be verified without it; confirm the date on the certificate.`
+    );
+  } else if (expiration <= current) {
+    isExpired = true;
     errors.push(`Policy expired on ${coi.policy_expiration_date} (Current project evaluation date: ${currentDateStr}).`);
   } else {
     // Check warning threshold limit
@@ -233,7 +272,16 @@ export function verifyCompliance(
 
     if (requiredNames.length > 0) {
       requiredNames.forEach((reqName) => {
-        if (isNamedAdditionalInsured(reqName, namedList)) return; // explicitly named — passes
+        const matchLevel = bestEntityMatch(reqName, namedList);
+        if (matchLevel === "match") return; // explicitly named — passes
+        if (matchLevel === "partial") {
+          // e.g. required "ABC Corp" vs "ABC Roofing" on the cert — one shared
+          // word is not proof of the same entity. Non-failing advisory.
+          errors.push(
+            `Additional Insured: a name similar to "${reqName}" appears on this certificate but is not a confident match — verify it refers to the same entity.`
+          );
+          return;
+        }
         if (blanketPresent && acceptBlanket) {
           errors.push(
             `Additional Insured: "${reqName}" is not explicitly named — relying on blanket "as required by written contract" language. Verify the endorsement (e.g. CG 20 10 / CG 20 33 / CG 20 38).`
@@ -281,7 +329,8 @@ export function verifyCompliance(
       (err) =>
         !err.includes("risk grace threshold") &&
         !err.includes("the endorsement") &&
-        !err.includes("does not match the enrolled vendor")
+        !err.includes("does not match the enrolled vendor") &&
+        !err.includes("verify it refers to the same entity")
     )
   ) {
     // If we have actual limit shortfalls, or missing WC / structural gaps
