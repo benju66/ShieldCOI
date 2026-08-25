@@ -2,6 +2,7 @@ import { Project, Subcontractor, CoiRecord, Notification } from "./types";
 import { verifyCompliance } from "./complianceEngine";
 import { fetchSettings, saveSettings, todayISO, AppSettings } from "./settingsService";
 import { supabase, currentOrgId } from "./supabaseClient";
+import { removeSubcontractorDocuments, removeAllOrgDocuments } from "./storageService";
 
 /**
  * Supabase-backed data layer. Every table is org-scoped by Row-Level Security,
@@ -144,8 +145,15 @@ export async function updateProject(projectId: string, updates: Partial<Project>
   if (error) throw new Error(error.message);
 }
 
-/** Delete a project (subcontractors + COIs cascade via FK). */
+/** Delete a project (subcontractors + COIs cascade via FK; stored documents best-effort). */
 export async function deleteProject(projectId: string): Promise<void> {
+  // Cascade wipes the rows but not storage — collect sub ids before the delete.
+  try {
+    const subs = await getSubcontractors(projectId);
+    for (const s of subs) await removeSubcontractorDocuments(s.id);
+  } catch (err: any) {
+    console.warn("Project storage cleanup skipped:", err?.message || err);
+  }
   const { error } = await supabase.from("projects").delete().eq("id", projectId);
   if (error) throw new Error(error.message);
 }
@@ -222,8 +230,9 @@ export async function updateSubcontractor(
   }
 }
 
-/** Delete a subcontractor (its COIs cascade via FK). */
+/** Delete a subcontractor (its COIs cascade via FK; stored documents best-effort). */
 export async function deleteSubcontractor(_projectId: string, subId: string): Promise<void> {
+  await removeSubcontractorDocuments(subId);
   const { error } = await supabase.from("subcontractors").delete().eq("id", subId);
   if (error) throw new Error(error.message);
 }
@@ -527,6 +536,7 @@ export async function importAllData(json: string): Promise<void> {
 
 /** Delete all of the org's records (projects cascade to subcontractors + COIs). */
 export async function clearAllData(): Promise<void> {
+  await removeAllOrgDocuments();
   const projErr = (await supabase.from("projects").delete().not("id", "is", null)).error;
   if (projErr) throw new Error(projErr.message);
   const notifErr = (await supabase.from("notifications").delete().not("id", "is", null)).error;

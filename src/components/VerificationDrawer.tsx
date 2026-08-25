@@ -210,8 +210,10 @@ export default function VerificationDrawer({
         activeData
       );
       onClose();
-    } catch (err) {
-      alert("Failed to apply compliance update.");
+    } catch (err: any) {
+      // Surface the real reason (e.g. document archiving failed) so the
+      // reviewer knows whether to retry or fall back to manual entry.
+      alert(err?.message || "Failed to apply compliance update.");
     } finally {
       setSubmitting(false);
     }

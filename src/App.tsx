@@ -51,6 +51,7 @@ import {
 } from "./dbService";
 
 import { Project, Subcontractor, Notification, CoiRecord, EndorsementFacts } from "./types";
+import { uploadCoiDocument } from "./storageService";
 import DashboardStats from "./components/DashboardStats";
 import NeedsAttention from "./components/NeedsAttention";
 import ProjectForm from "./components/ProjectForm";
@@ -301,9 +302,23 @@ export default function App() {
 
     const payloadToSave = updatedPayload || scannedPayload;
 
-    // 1. Submit COI record
+    // 1. Archive the original certificate document. Sandbox samples and manual
+    // entries have no real file; everything else uploads BEFORE the record is
+    // written — if archiving fails, the save aborts (a compliance record
+    // without its audit document is the gap this exists to close).
+    let filePath: string | null = null;
+    let fileMime: string | null = null;
+    const fileData: string | undefined = payloadToSave.file_data || scannedPayload.file_data;
+    if (fileData && !scannedPayload.simulated) {
+      fileMime = payloadToSave.file_mime || scannedPayload.file_mime || "application/pdf";
+      filePath = await uploadCoiDocument(activeSubForUpload.id, fileData, fileMime);
+    }
+
+    // 2. Submit COI record
     await submitCoiRecord(selectedProject.id, activeSubForUpload.id, {
       file_name: payloadToSave.file_name,
+      file_path: filePath,
+      file_mime: fileMime,
       insured_extracted_name: payloadToSave.insured_name,
       gl_occurrence_extracted: payloadToSave.gl_each_occurrence,
       gl_aggregate_extracted: payloadToSave.gl_general_aggregate,
@@ -326,7 +341,7 @@ export default function App() {
       extraction_method: payloadToSave.extraction_method || "AI_Scan",
     });
 
-    // 2. Commit override state if chosen
+    // 3. Commit override state if chosen
     if (manualOverride) {
       await updateSubcontractor(selectedProject.id, activeSubForUpload.id, {
         manual_override: true,
@@ -347,7 +362,7 @@ export default function App() {
       });
     }
 
-    // 3. Reset workflow states
+    // 4. Reset workflow states
     setActiveSubForUpload(null);
     setScannedPayload(null);
     await loadAllData();

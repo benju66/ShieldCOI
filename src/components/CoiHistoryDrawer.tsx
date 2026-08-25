@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from "react";
-import { X, Clock, Calendar, Shield, Check, Flame, ChevronRight, FileText, CheckCircle2, AlertTriangle, HelpCircle, ArrowUpRight } from "lucide-react";
+import { X, Clock, Calendar, Shield, Check, Flame, ChevronRight, FileText, CheckCircle2, AlertTriangle, HelpCircle, ArrowUpRight, Eye, ExternalLink, RefreshCw } from "lucide-react";
 import { Subcontractor, CoiRecord } from "../types";
 import { getCoiRecords } from "../dbService";
 import { formatUSD } from "../utils/currency";
+import { downloadCoiDocumentBase64, getCoiDocumentSignedUrl } from "../storageService";
+import DocumentViewer from "./DocumentViewer";
 
 interface CoiHistoryDrawerProps {
   isOpen: boolean;
@@ -21,6 +23,43 @@ export default function CoiHistoryDrawer({
   const [selectedRecord, setSelectedRecord] = useState<CoiRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Stored-document viewing (loaded on demand per record).
+  const [docState, setDocState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [docBase64, setDocBase64] = useState<string | null>(null);
+  const [docError, setDocError] = useState<string | null>(null);
+
+  // Reset the viewer whenever the reviewer switches records.
+  useEffect(() => {
+    setDocState("idle");
+    setDocBase64(null);
+    setDocError(null);
+  }, [selectedRecord?.id]);
+
+  const handleViewDocument = async () => {
+    if (!selectedRecord?.file_path) return;
+    setDocState("loading");
+    setDocError(null);
+    try {
+      const base64 = await downloadCoiDocumentBase64(selectedRecord.file_path);
+      setDocBase64(base64);
+      setDocState("ready");
+    } catch (err: any) {
+      setDocError(err?.message || "Couldn't load the stored certificate.");
+      setDocState("error");
+    }
+  };
+
+  const handleOpenOriginal = async () => {
+    if (!selectedRecord?.file_path) return;
+    try {
+      const url = await getCoiDocumentSignedUrl(selectedRecord.file_path);
+      window.open(url, "_blank", "noopener");
+    } catch (err: any) {
+      setDocError(err?.message || "Couldn't create a download link.");
+      setDocState("error");
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -252,6 +291,52 @@ export default function CoiHistoryDrawer({
                           </span>
                         </div>
                       </div>
+                    </div>
+
+                    {/* Stored source document (wave 2 — archived original certificate) */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center">
+                          <FileText className="h-3.5 w-3.5 mr-1 text-slate-500" />
+                          Source Document
+                        </h4>
+                        {selectedRecord.file_path ? (
+                          <div className="flex items-center gap-1.5">
+                            {docState !== "ready" && (
+                              <button
+                                type="button"
+                                onClick={handleViewDocument}
+                                disabled={docState === "loading"}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-2 py-1 hover:bg-blue-100 disabled:opacity-60 cursor-pointer"
+                              >
+                                {docState === "loading" ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Eye className="h-3 w-3" />}
+                                {docState === "loading" ? "Loading…" : "View certificate"}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={handleOpenOriginal}
+                              title="Open the original file in a new tab (link expires after 10 minutes)"
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 bg-white border border-slate-200 rounded px-2 py-1 hover:bg-slate-100 cursor-pointer"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              Open original
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-500 italic">
+                            No document archived — {selectedRecord.extraction_method === "Manual_Entry" ? "manual entry" : "saved before document archiving"}.
+                          </span>
+                        )}
+                      </div>
+                      {docState === "error" && docError && (
+                        <p className="mt-2 text-[11px] text-red-700 bg-red-50 border border-red-200 rounded p-2">{docError}</p>
+                      )}
+                      {docState === "ready" && docBase64 && (
+                        <div className="mt-3 h-[480px]">
+                          <DocumentViewer fileData={docBase64} fileMime={selectedRecord.file_mime || "application/pdf"} />
+                        </div>
+                      )}
                     </div>
 
                     {/* Exceptions / Validation errors list */}

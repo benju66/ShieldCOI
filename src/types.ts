@@ -132,6 +132,11 @@ export interface CoiRecord {
   // Endorsement facts read off the certificate (WOS / P&NC / per-project
   // aggregate / completed-ops AI). Only evaluated when the project opts in.
   endorsement_facts_extracted?: EndorsementFacts;
+  // Original certificate document in Storage (bucket "coi-documents"). Absent
+  // on manual entries, sandbox samples, and records saved before documents
+  // were archived (wave 2).
+  file_path?: string | null;
+  file_mime?: string | null;
 }
 
 export interface Notification {

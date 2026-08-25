@@ -55,7 +55,8 @@ loop.
 
    Without `GEMINI_API_KEY`, uploads fail closed with a clear error and the
    built-in sandbox sample documents still work (they use canned data by
-   design). Without Supabase credentials the app runs against local storage.
+   design). The Supabase credentials are required — auth, records, and the
+   archived certificate documents all live there.
 
 3. Start the dev server (Express + Vite middleware):
 
