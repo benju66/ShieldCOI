@@ -1,0 +1,855 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ShieldCOI — Architecture Map</title>
+<style>
+  :root{
+    --bg:#0b1020; --bg2:#0f1629; --panel:#141c31; --panel2:#1a2542;
+    --line:#25324f; --line2:#33436b; --text:#e6ecf7; --muted:#93a1bf;
+    --muted2:#6b7a9c; --accent:#60a5fa; --accent2:#818cf8;
+    --shadow:0 8px 30px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:radial-gradient(1200px 700px at 15% -5%, #16204090, transparent),
+               radial-gradient(1000px 600px at 100% 0%, #1b143a70, transparent),
+               var(--bg);
+    color:var(--text);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent)}
+  .wrap{max-width:1500px;margin:0 auto;padding:22px 22px 80px}
+  header.app{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:14px}
+  .brand{display:flex;align-items:center;gap:13px}
+  .logo{width:42px;height:42px;border-radius:11px;background:linear-gradient(135deg,#2563eb,#7c3aed);display:flex;align-items:center;justify-content:center;box-shadow:var(--shadow);font-size:20px}
+  .brand h1{margin:0;font-size:19px;letter-spacing:.4px;font-weight:800}
+  .brand .sub{color:var(--muted);font-size:12px;margin-top:2px;max-width:640px}
+  .stats{display:flex;gap:10px;flex-wrap:wrap}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:8px 13px;min-width:82px}
+  .stat b{display:block;font-size:19px;font-weight:800;line-height:1.1}
+  .stat span{color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.6px}
+
+  .tabs{display:flex;gap:6px;margin:8px 0 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .tab{background:none;border:0;color:var(--muted);font-weight:700;font-size:13px;padding:9px 14px;border-radius:9px 9px 0 0;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab:hover{color:var(--text);background:#ffffff08}
+  .tab.active{color:var(--text);border-bottom-color:var(--accent)}
+
+  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  .toolbar .hint{color:var(--muted);font-size:12px}
+  .btn{background:var(--panel);border:1px solid var(--line2);color:var(--text);border-radius:8px;padding:6px 11px;font-size:12px;font-weight:600;cursor:pointer}
+  .btn:hover{background:var(--panel2)}
+  .legend{display:flex;gap:7px;flex-wrap:wrap;margin-left:auto}
+  .lg{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:4px 10px 4px 8px;font-size:11.5px;font-weight:600;cursor:pointer;user-select:none;color:var(--muted)}
+  .lg .dot{width:10px;height:10px;border-radius:50%}
+  .lg.on{color:var(--text);border-color:var(--line2)}
+  .lg.off{opacity:.4}
+
+  /* Architecture canvas */
+  .stage{position:relative}
+  #edges{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1;overflow:visible}
+  .bands{position:relative;z-index:2;display:flex;flex-direction:column;gap:14px}
+  .band{border:1px solid var(--line);background:linear-gradient(180deg,#ffffff05,transparent);border-radius:14px;padding:12px 14px}
+  .band-head{display:flex;align-items:center;gap:10px;margin-bottom:11px}
+  .band-head .bar{width:4px;height:18px;border-radius:3px}
+  .band-head h3{margin:0;font-size:13px;font-weight:800;letter-spacing:.3px}
+  .band-head .blurb{color:var(--muted);font-size:11.5px}
+  .nodes{display:flex;flex-wrap:wrap;gap:10px}
+  .node{position:relative;background:var(--panel);border:1px solid var(--line2);border-left-width:3px;border-radius:10px;padding:9px 12px;cursor:pointer;min-width:150px;max-width:230px;transition:transform .12s ease,box-shadow .12s ease,border-color .12s}
+  .node:hover{transform:translateY(-2px);box-shadow:var(--shadow)}
+  .node .nl{font-weight:700;font-size:12.5px;display:flex;align-items:center;gap:6px}
+  .node .nt{color:var(--muted);font-size:10.5px;margin-top:2px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .node .badge{font-size:9px;text-transform:uppercase;letter-spacing:.5px;font-weight:800;padding:1px 6px;border-radius:20px;background:#ffffff12;color:var(--muted)}
+  .node.dim{opacity:.16;filter:saturate(.4)}
+  .node.hot{border-color:#fff;box-shadow:0 0 0 1px #ffffff40,var(--shadow)}
+  .node.lit{opacity:1}
+
+  /* Detail panel */
+  .drawer{position:fixed;top:0;right:0;height:100%;width:min(430px,94vw);background:var(--bg2);border-left:1px solid var(--line2);box-shadow:-14px 0 40px rgba(0,0,0,.5);transform:translateX(100%);transition:transform .22s cubic-bezier(.4,0,.2,1);z-index:50;display:flex;flex-direction:column}
+  .drawer.open{transform:translateX(0)}
+  .drawer .dh{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  .drawer .dh h2{margin:0;font-size:16px;font-weight:800}
+  .drawer .dh .path{color:var(--muted);font-size:11.5px;font-family:ui-monospace,Menlo,monospace;margin-top:4px;word-break:break-all}
+  .drawer .db{padding:16px 18px;overflow:auto}
+  .x{background:none;border:1px solid var(--line2);color:var(--muted);width:30px;height:30px;border-radius:8px;cursor:pointer;font-size:16px;flex-shrink:0}
+  .x:hover{color:var(--text);background:var(--panel)}
+  .sec{margin-bottom:16px}
+  .sec h4{margin:0 0 7px;font-size:10.5px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted)}
+  .sec p{margin:0;color:var(--text);font-size:13px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{background:var(--panel);border:1px solid var(--line2);border-radius:7px;padding:3px 9px;font-size:11px;color:var(--muted)}
+  .relbtn{display:flex;align-items:center;gap:7px;width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 10px;margin-bottom:5px;cursor:pointer;color:var(--text);font-size:12px}
+  .relbtn:hover{background:var(--panel2);border-color:var(--line2)}
+  .relbtn .d{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .relbtn .a{margin-left:auto;color:var(--muted)}
+
+  /* Data model */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}
+  .table-card{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .tc-head{background:linear-gradient(180deg,#2dd4bf22,transparent);padding:11px 14px;border-bottom:1px solid var(--line)}
+  .tc-head h3{margin:0;font-size:14px;font-weight:800;font-family:ui-monospace,Menlo,monospace;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .tc-head .ten{font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;color:#2dd4bf;background:#2dd4bf1a;border:1px solid #2dd4bf33;padding:2px 7px;border-radius:20px;font-weight:800}
+  .tc-rls{font-size:10.5px;color:var(--muted);margin-top:4px}
+  .cols{padding:6px 0}
+  .col{display:flex;align-items:baseline;gap:8px;padding:4px 14px;font-size:12px}
+  .col .cn{font-family:ui-monospace,Menlo,monospace;color:var(--text);font-weight:600}
+  .col .ct{color:var(--muted);font-size:11px;margin-left:auto;font-family:ui-monospace,Menlo,monospace}
+  .col .kb{font-size:8.5px;font-weight:800;padding:1px 5px;border-radius:5px;text-transform:uppercase;letter-spacing:.4px}
+  .kb.pk{background:#fbbf2422;color:#fbbf24;border:1px solid #fbbf2440}
+  .kb.fk{background:#60a5fa22;color:#60a5fa;border:1px solid #60a5fa40}
+  .col .note{display:block;color:var(--muted2);font-size:10px;font-style:italic;width:100%}
+  .tc-note{padding:9px 14px;border-top:1px solid var(--line);color:var(--muted);font-size:11px;font-style:italic;background:#ffffff05}
+
+  /* Flows */
+  .flow{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:16px 18px;margin-bottom:14px}
+  .flow h3{margin:0 0 12px;font-size:15px;font-weight:800;display:flex;align-items:center;gap:9px}
+  .flow ol{margin:0;padding:0;list-style:none;counter-reset:s}
+  .flow li{counter-increment:s;position:relative;padding:0 0 14px 40px;color:var(--text);font-size:13px}
+  .flow li:before{content:counter(s);position:absolute;left:0;top:-2px;width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#7c3aed);color:#fff;font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center}
+  .flow li:after{content:"";position:absolute;left:12.5px;top:26px;bottom:2px;width:1.5px;background:var(--line2)}
+  .flow li:last-child{padding-bottom:0}
+  .flow li:last-child:after{display:none}
+
+  .view{display:none}
+  .view.active{display:block}
+  footer{color:var(--muted2);font-size:11px;margin-top:26px;text-align:center}
+  @media (max-width:700px){ .node{max-width:100%;flex:1 1 100%} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="app">
+    <div class="brand">
+      <div class="logo">🛡️</div>
+      <div>
+        <h1>ShieldCOI · Architecture Map</h1>
+        <div class="sub" id="subtitle"></div>
+      </div>
+    </div>
+    <div class="stats" id="stats"></div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" data-view="arch">Architecture</button>
+    <button class="tab" data-view="data">Data Model</button>
+    <button class="tab" data-view="flows">Data Flows</button>
+  </div>
+
+  <!-- ARCHITECTURE -->
+  <section class="view active" id="view-arch">
+    <div class="toolbar">
+      <span class="hint">Click a node for details · hover to trace dependencies · toggle layers →</span>
+      <button class="btn" id="resetBtn">Reset view</button>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div class="stage">
+      <svg id="edges"></svg>
+      <div class="bands" id="bands"></div>
+    </div>
+  </section>
+
+  <!-- DATA MODEL -->
+  <section class="view" id="view-data">
+    <div class="toolbar"><span class="hint">Postgres schema — every table is org-scoped by Row-Level Security via <code>current_org_id()</code>.</span></div>
+    <div class="grid" id="tables"></div>
+  </section>
+
+  <!-- FLOWS -->
+  <section class="view" id="view-flows">
+    <div class="toolbar"><span class="hint">The key end-to-end sequences through the system.</span></div>
+    <div id="flows"></div>
+  </section>
+
+  <footer id="footer"></footer>
+</div>
+
+<!-- Detail drawer -->
+<div class="drawer" id="drawer">
+  <div class="dh">
+    <div>
+      <h2 id="dTitle"></h2>
+      <div class="path" id="dPath"></div>
+    </div>
+    <button class="x" id="dClose">✕</button>
+  </div>
+  <div class="db" id="dBody"></div>
+</div>
+
+<script id="archData" type="application/json">{
+  "meta": {
+    "app": "ShieldCOI",
+    "tagline": "Project-Level Insurance Compliance Manager",
+    "description": "Full-stack React SPA that tracks construction projects, configures per-project insurance limits, scans ACORD 25 COIs via Gemini AI, and manages subcontractor compliance. Multi-tenant on Supabase with Row-Level Security; deployed on Vercel.",
+    "generatedAt": "2026-07-22",
+    "stack": ["React 19", "TypeScript", "Vite 6", "Tailwind CSS 4", "Express (dev)", "Vercel serverless (prod)", "Supabase (Postgres + Auth + Edge Functions)", "Google Gemini 3.5 Flash", "Resend (email)"],
+    "entrypoint": "src/main.tsx",
+    "totalSourceLines": 11036
+  },
+  "layers": [
+    { "id": "shell",    "label": "Entry / Shell",        "color": "#818cf8", "blurb": "Bootstraps React, gates on auth, provides settings." },
+    { "id": "context",  "label": "State / Context",       "color": "#a78bfa", "blurb": "React context providers holding session + org settings." },
+    { "id": "view",     "label": "Views & Components",    "color": "#60a5fa", "blurb": "The App shell and every screen, modal, and drawer." },
+    { "id": "domain",   "label": "Domain Logic",          "color": "#34d399", "blurb": "Pure, testable business rules (compliance, trades, vendors)." },
+    { "id": "service",  "label": "Data Services",         "color": "#fbbf24", "blurb": "Async data layer talking to Supabase; single swap point." },
+    { "id": "api",      "label": "Server / AI API",       "color": "#fb923c", "blurb": "Express (dev) + Vercel functions that call Gemini to read documents." },
+    { "id": "backend",  "label": "Supabase Backend",      "color": "#2dd4bf", "blurb": "Postgres w/ RLS, Auth, and a scheduled edge function." },
+    { "id": "external", "label": "External Services",     "color": "#fb7185", "blurb": "Third-party dependencies: Gemini, Resend, Vercel." }
+  ],
+  "nodes": [
+    {
+      "id": "main", "label": "main.tsx", "layer": "shell", "type": "entry", "file": "src/main.tsx", "loc": 13,
+      "role": "React entrypoint. Mounts <AuthProvider><Root/></AuthProvider> into #root and imports global CSS.",
+      "tech": ["React DOM", "StrictMode"],
+      "deps": ["root", "authContext"]
+    },
+    {
+      "id": "root", "label": "Root.tsx", "layer": "shell", "type": "gate", "file": "src/Root.tsx", "loc": 30,
+      "role": "Top-level auth gate. Shows a loader while the session resolves, the LoginScreen when signed out, and <SettingsProvider><App/></SettingsProvider> when signed in.",
+      "tech": ["React"],
+      "deps": ["authContext", "settingsContext", "loginScreen", "app"]
+    },
+    {
+      "id": "authContext", "label": "AuthContext", "layer": "context", "type": "context", "file": "src/AuthContext.tsx", "loc": 64,
+      "role": "Holds the Supabase auth session + user; exposes signIn / signUp / signOut. Subscribes to onAuthStateChange and clears the org-id cache on sign-out.",
+      "tech": ["React Context", "Supabase Auth"],
+      "deps": ["supabaseClient"]
+    },
+    {
+      "id": "settingsContext", "label": "SettingsContext", "layer": "context", "type": "context", "file": "src/SettingsContext.tsx", "loc": 64,
+      "role": "Loads org AppSettings once and shares them app-wide. Blocks children until loaded; updateSettings is optimistic and persists via settingsService.",
+      "tech": ["React Context"],
+      "deps": ["settingsService"]
+    },
+    {
+      "id": "app", "label": "App.tsx", "layer": "view", "type": "orchestrator", "file": "src/App.tsx", "loc": 1145,
+      "role": "Central orchestrator. Owns all in-memory record state (projects, subcontractors, notifications, active-COI map), the Home/Projects/Vendors view switch, and every CRUD handler. Wires all modals and drawers.",
+      "tech": ["React", "lucide-react"],
+      "deps": ["dbService", "settingsContext", "authContext", "accountService", "types", "settingsService", "reportExporter", "currency", "dashboardStats", "needsAttention", "notificationList", "vendorsView", "projectForm", "subcontractorModal", "coiUploadZone", "verificationDrawer", "coiHistoryDrawer", "executivePrintReport", "settingsModal", "userGuideModal"]
+    },
+    {
+      "id": "loginScreen", "label": "LoginScreen", "layer": "view", "type": "component", "file": "src/components/LoginScreen.tsx", "loc": 142,
+      "role": "Email/password sign-in and sign-up form. Handles the 'check your email' confirmation state.",
+      "tech": ["React"],
+      "deps": ["authContext", "supabaseClient"]
+    },
+    {
+      "id": "dashboardStats", "label": "DashboardStats", "layer": "view", "type": "component", "file": "src/components/DashboardStats.tsx", "loc": 98,
+      "role": "Home KPI row: active projects, subcontractor count, compliance rate %, flagged (expired/insufficient) count.",
+      "tech": ["React"],
+      "deps": ["types"]
+    },
+    {
+      "id": "needsAttention", "label": "NeedsAttention", "layer": "view", "type": "component", "file": "src/components/NeedsAttention.tsx", "loc": 148,
+      "role": "Cross-project triage worklist. Buckets subs into expired / insufficient / expiring-soon / missing and offers jump-to-project or upload actions.",
+      "tech": ["React"],
+      "deps": ["types"]
+    },
+    {
+      "id": "notificationList", "label": "NotificationList", "layer": "view", "type": "component", "file": "src/components/NotificationList.tsx", "loc": 226,
+      "role": "Notifications feed. Opens a draft-email composer (from templates, token-substituted) the user can copy.",
+      "tech": ["React"],
+      "deps": ["types"]
+    },
+    {
+      "id": "vendorsView", "label": "VendorsView", "layer": "view", "type": "component", "file": "src/components/VendorsView.tsx", "loc": 258,
+      "role": "Cross-project vendor roll-up. Groups the same company across projects, sortable by attention / name / project count.",
+      "tech": ["React"],
+      "deps": ["vendors", "currency", "types"]
+    },
+    {
+      "id": "projectForm", "label": "ProjectForm", "layer": "view", "type": "modal", "file": "src/components/ProjectForm.tsx", "loc": 910,
+      "role": "Create/edit a project: coverage baselines, warn-days, custom requirements, additional-insured, endorsements. Can scan a prime-contract exhibit to pre-fill baselines.",
+      "tech": ["React"],
+      "deps": ["types", "currencyInput", "settingsContext", "scanContractRoute"]
+    },
+    {
+      "id": "subcontractorModal", "label": "SubcontractorModal", "layer": "view", "type": "modal", "file": "src/components/SubcontractorModal.tsx", "loc": 226,
+      "role": "Enroll a subcontractor/supplier: company, trade (from configurable list), contract value, and optional vendor contact.",
+      "tech": ["React"],
+      "deps": ["currencyInput", "settingsContext"]
+    },
+    {
+      "id": "verificationDrawer", "label": "VerificationDrawer", "layer": "view", "type": "drawer", "file": "src/components/VerificationDrawer.tsx", "loc": 1299,
+      "role": "Split-screen compliance reviewer. Runs verifyCompliance live on the extracted values (editable), shows the pass/fail matrix beside the rendered document, and captures manual overrides / waivers on save.",
+      "tech": ["React"],
+      "deps": ["complianceEngine", "tradeRules", "currency", "documentViewer", "currencyInput", "settingsContext", "types"]
+    },
+    {
+      "id": "coiUploadZone", "label": "CoiUploadZone", "layer": "view", "type": "component", "file": "src/components/CoiUploadZone.tsx", "loc": 368,
+      "role": "Drag-and-drop COI uploader. Posts the file to /api/scan-coi and hands the extracted payload back to App. Also offers manual entry and sandbox samples.",
+      "tech": ["React", "fetch"],
+      "deps": ["settingsService", "settingsContext", "types", "scanCoiRoute"]
+    },
+    {
+      "id": "documentViewer", "label": "DocumentViewer", "layer": "view", "type": "component", "file": "src/components/DocumentViewer.tsx", "loc": 381,
+      "role": "Renders the uploaded PDF/image with pdf.js and overlays bounding boxes for extracted ACORD 25 fields using a deterministic field template.",
+      "tech": ["pdfjs-dist (web worker)"],
+      "deps": []
+    },
+    {
+      "id": "settingsModal", "label": "SettingsModal", "layer": "view", "type": "modal", "file": "src/components/SettingsModal.tsx", "loc": 1072,
+      "role": "Tabbed settings: org default requirements, trade labels, trade coverage rules, email templates, evaluation date, reminder cadence, org name + user profile/password, and data export/import/clear/seed.",
+      "tech": ["React"],
+      "deps": ["settingsService", "settingsContext", "tradeRules", "types", "dbService", "accountService", "currencyInput"]
+    },
+    {
+      "id": "coiHistoryDrawer", "label": "CoiHistoryDrawer", "layer": "view", "type": "drawer", "file": "src/components/CoiHistoryDrawer.tsx", "loc": 387,
+      "role": "Per-subcontractor COI timeline. Lists every certificate on file and lets you inspect a prior policy year's extracted values.",
+      "tech": ["React"],
+      "deps": ["dbService", "currency", "types"]
+    },
+    {
+      "id": "executivePrintReport", "label": "ExecutivePrintReport", "layer": "view", "type": "component", "file": "src/components/ExecutivePrintReport.tsx", "loc": 265,
+      "role": "Print-only compliance ledger for a project (window.print()). Hidden on screen; shown in the print stylesheet.",
+      "tech": ["React", "print CSS"],
+      "deps": ["currency", "types"]
+    },
+    {
+      "id": "userGuideModal", "label": "UserGuideModal", "layer": "view", "type": "modal", "file": "src/components/UserGuideModal.tsx", "loc": 327,
+      "role": "In-app help: tabbed walkthrough of project setup, certificate parsing, exclusions/waivers, and exporting.",
+      "tech": ["React"],
+      "deps": []
+    },
+    {
+      "id": "currencyInput", "label": "CurrencyInput", "layer": "view", "type": "component", "file": "src/components/CurrencyInput.tsx", "loc": 84,
+      "role": "Reusable USD text field that formats digits as '$1,250,000' live while preserving the caret.",
+      "tech": ["React"],
+      "deps": ["currency"]
+    },
+    {
+      "id": "complianceEngine", "label": "complianceEngine", "layer": "domain", "type": "logic", "file": "src/complianceEngine.ts", "loc": 297,
+      "role": "The COI verification engine. verifyCompliance() checks a certificate against project + trade requirements and returns {status, errors}. Hard-fail limit shortfalls, WC, claims-made GL, expiration; advisory-only for insured-name, additional-insured, and endorsements. Covered by complianceEngine.test.ts (595 lines).",
+      "tech": ["Pure TypeScript"],
+      "deps": ["tradeRules", "types"]
+    },
+    {
+      "id": "tradeRules", "label": "tradeRules", "layer": "domain", "type": "logic", "file": "src/tradeRules.ts", "loc": 54,
+      "role": "resolveRequiredCoverage(): the effective umbrella/professional/pollution minimum is max(project baseline, trade rule). Trade rules ship empty and can only raise, never lower.",
+      "tech": ["Pure TypeScript"],
+      "deps": ["types"]
+    },
+    {
+      "id": "vendors", "label": "vendors", "layer": "domain", "type": "logic", "file": "src/vendors.ts", "loc": 141,
+      "role": "buildVendorSummaries(): groups subcontractor records by a normalized company key across projects, rolls up worst status + earliest expiration + total contract value.",
+      "tech": ["Pure TypeScript"],
+      "deps": ["types"]
+    },
+    {
+      "id": "currency", "label": "currency", "layer": "domain", "type": "util", "file": "src/utils/currency.ts", "loc": 20,
+      "role": "formatUSD(): Intl-based USD formatter ('$1,000,000', 0 decimals).",
+      "tech": ["Intl.NumberFormat"],
+      "deps": []
+    },
+    {
+      "id": "reportExporter", "label": "reportExporter", "layer": "domain", "type": "util", "file": "src/utils/reportExporter.ts", "loc": 73,
+      "role": "exportToCSV(): serializes a project's subcontractors to CSV and triggers a browser download.",
+      "tech": ["Blob download"],
+      "deps": ["types"]
+    },
+    {
+      "id": "types", "label": "types", "layer": "domain", "type": "types", "file": "src/types.ts", "loc": 146,
+      "role": "Shared domain model: Project, ProjectRequirements, EndorsementRequirements/Facts, Subcontractor, CoiRecord, Notification, TradeType.",
+      "tech": ["TypeScript interfaces"],
+      "deps": []
+    },
+    {
+      "id": "dbService", "label": "dbService", "layer": "service", "type": "service", "file": "src/dbService.ts", "loc": 786,
+      "role": "Supabase-backed data layer for projects, subcontractors, COI records, and notifications. submitCoiRecord() is the write hub: it re-runs verifyCompliance, writes the COI, updates sub status (honoring waivers), and raises notifications. Also export/import/clear/seed.",
+      "tech": ["Supabase JS", "RLS-scoped"],
+      "deps": ["types", "complianceEngine", "settingsService", "supabaseClient"]
+    },
+    {
+      "id": "settingsService", "label": "settingsService", "layer": "service", "type": "service", "file": "src/settingsService.ts", "loc": 199,
+      "role": "Loads/saves org_settings and defines AppSettings + all built-in defaults (requirements, trades, templates, reminder cadence). todayISO() helper.",
+      "tech": ["Supabase JS"],
+      "deps": ["tradeRules", "types", "supabaseClient"]
+    },
+    {
+      "id": "accountService", "label": "accountService", "layer": "service", "type": "service", "file": "src/accountService.ts", "loc": 86,
+      "role": "Org identity + the signed-in user's profile (orgs / profiles tables). Rename org (owner-only), edit own profile, change password.",
+      "tech": ["Supabase JS"],
+      "deps": ["supabaseClient"]
+    },
+    {
+      "id": "supabaseClient", "label": "supabaseClient", "layer": "service", "type": "client", "file": "src/supabaseClient.ts", "loc": 46,
+      "role": "The shared Supabase browser client (URL + anon key from Vite env). currentOrgId() caches the user's org id for stamping inserts; RLS enforces scoping on read/update/delete.",
+      "tech": ["@supabase/supabase-js"],
+      "deps": ["supabaseJs"]
+    },
+    {
+      "id": "server", "label": "server.ts", "layer": "api", "type": "server", "file": "server.ts", "loc": 62,
+      "role": "Local Express dev server. Serves the Vite SPA in middleware mode and exposes POST /api/scan-coi and /api/scan-contract, delegating to the shared scan logic.",
+      "tech": ["Express", "Vite middleware"],
+      "deps": ["scanCore"]
+    },
+    {
+      "id": "scanCoiRoute", "label": "api/scan-coi", "layer": "api", "type": "function", "file": "api/scan-coi.ts", "loc": 21,
+      "role": "Vercel serverless function POST /api/scan-coi (maxDuration 60s). Thin wrapper over scanCoi().",
+      "tech": ["Vercel Node function"],
+      "deps": ["scanCore"]
+    },
+    {
+      "id": "scanContractRoute", "label": "api/scan-contract", "layer": "api", "type": "function", "file": "api/scan-contract.ts", "loc": 18,
+      "role": "Vercel serverless function POST /api/scan-contract. Thin wrapper over scanContract().",
+      "tech": ["Vercel Node function"],
+      "deps": ["scanCore"]
+    },
+    {
+      "id": "scanCore", "label": "api/_scan", "layer": "api", "type": "logic", "file": "api/_scan.ts", "loc": 541,
+      "role": "Shared Gemini scanning logic. scanCoi() reads an ACORD 25 into structured limits + endorsement facts; scanContract() reads a prime-contract exhibit into project baselines. FAILS CLOSED — never fabricates data; only named sandbox sample files return canned extractions.",
+      "tech": ["@google/genai", "structured JSON schema"],
+      "deps": ["gemini"]
+    },
+    {
+      "id": "pgSchema", "label": "Postgres + RLS", "layer": "backend", "type": "database", "file": "supabase/migrations/0001_init.sql … 0007", "loc": 0,
+      "role": "Multi-tenant schema. Every table is org-scoped by RLS via current_org_id(). Tables: orgs, profiles, org_settings, projects, subcontractors, coi_records, notifications, coi_reminder_log. 7 migrations (init → endorsements).",
+      "tech": ["Supabase Postgres", "Row-Level Security", "pgcrypto"],
+      "deps": []
+    },
+    {
+      "id": "supabaseAuth", "label": "Supabase Auth", "layer": "backend", "type": "auth", "file": "auth.users + handle_new_user()", "loc": 0,
+      "role": "Email/password auth. A handle_new_user() SECURITY DEFINER trigger bootstraps tenancy: the first signup creates the org + org_settings + owner profile; later signups join as members.",
+      "tech": ["Supabase Auth", "Postgres trigger"],
+      "deps": ["pgSchema"]
+    },
+    {
+      "id": "edgeReminders", "label": "send-expiry-reminders", "layer": "backend", "type": "edge", "file": "supabase/functions/send-expiry-reminders/index.ts", "loc": 283,
+      "role": "Daily pg_cron edge function (Deno). Uses the service-role key to bypass RLS and iterate every org; finds each sub's latest COI, buckets it (30/7/expired), and fires in-app + optional email notices. Idempotent via the coi_reminder_log unique index.",
+      "tech": ["Deno", "service-role", "pg_cron"],
+      "deps": ["pgSchema", "resend"]
+    },
+    {
+      "id": "supabaseJs", "label": "@supabase/supabase-js", "layer": "external", "type": "sdk", "file": "node_modules", "loc": 0,
+      "role": "Supabase client SDK — DB queries + Auth from the browser and the edge function.",
+      "tech": ["SDK"],
+      "deps": ["pgSchema", "supabaseAuth"]
+    },
+    {
+      "id": "gemini", "label": "Google Gemini 3.5 Flash", "layer": "external", "type": "ai", "file": "GEMINI_API_KEY", "loc": 0,
+      "role": "Multimodal LLM. Extracts structured insurance data from certificate images/PDFs and contract exhibits under a strict response schema.",
+      "tech": ["Gemini API"],
+      "deps": []
+    },
+    {
+      "id": "resend", "label": "Resend", "layer": "external", "type": "email", "file": "RESEND_API_KEY", "loc": 0,
+      "role": "Transactional email provider for the reminder engine's optional email channel. Off unless RESEND_API_KEY + REMINDER_FROM_EMAIL are set.",
+      "tech": ["Resend API"],
+      "deps": []
+    },
+    {
+      "id": "vercel", "label": "Vercel", "layer": "external", "type": "host", "file": "vercel.json", "loc": 0,
+      "role": "Production host. Builds the Vite SPA to /dist, serves /api/* as serverless functions, and rewrites all non-API routes to index.html (SPA).",
+      "tech": ["Vercel", "Vite build"],
+      "deps": []
+    }
+  ],
+  "database": {
+    "tables": [
+      {
+        "name": "orgs", "tenancy": "root", "rls": "read own (id = current_org_id()); update own (owner only)",
+        "columns": [
+          { "name": "id", "type": "uuid", "key": "PK" },
+          { "name": "name", "type": "text" },
+          { "name": "created_at", "type": "timestamptz" }
+        ]
+      },
+      {
+        "name": "profiles", "tenancy": "user↔org", "rls": "read org; update own (id = auth.uid())",
+        "columns": [
+          { "name": "id", "type": "uuid", "key": "PK → auth.users" },
+          { "name": "org_id", "type": "uuid", "key": "FK → orgs" },
+          { "name": "email", "type": "text" },
+          { "name": "role", "type": "text", "note": "owner | member" },
+          { "name": "full_name", "type": "text", "note": "nullable" },
+          { "name": "created_at", "type": "timestamptz" }
+        ]
+      },
+      {
+        "name": "org_settings", "tenancy": "one per org", "rls": "rw where org_id = current_org_id()",
+        "columns": [
+          { "name": "org_id", "type": "uuid", "key": "PK → orgs" },
+          { "name": "default_requirements", "type": "jsonb" },
+          { "name": "trades", "type": "jsonb" },
+          { "name": "trade_rules", "type": "jsonb" },
+          { "name": "email_templates", "type": "jsonb" },
+          { "name": "evaluation_date", "type": "date", "note": "pins 'today' for demos" },
+          { "name": "reminder_settings", "type": "jsonb", "note": "cadence + channels" },
+          { "name": "updated_at", "type": "timestamptz" }
+        ]
+      },
+      {
+        "name": "projects", "tenancy": "org-scoped", "rls": "rw where org_id = current_org_id()",
+        "columns": [
+          { "name": "id", "type": "uuid", "key": "PK" },
+          { "name": "org_id", "type": "uuid", "key": "FK → orgs" },
+          { "name": "name", "type": "text" },
+          { "name": "number", "type": "text" },
+          { "name": "target_completion_date", "type": "date" },
+          { "name": "requirements", "type": "jsonb", "note": "ProjectRequirements" },
+          { "name": "custom_requirements", "type": "jsonb" },
+          { "name": "additional_insured_required", "type": "boolean" },
+          { "name": "additional_insured_names", "type": "jsonb" },
+          { "name": "accept_blanket_ai", "type": "boolean" },
+          { "name": "endorsement_requirements", "type": "jsonb", "note": "opt-in advisories" },
+          { "name": "email_templates", "type": "jsonb" },
+          { "name": "archived", "type": "boolean" },
+          { "name": "created_at", "type": "timestamptz" }
+        ]
+      },
+      {
+        "name": "subcontractors", "tenancy": "org-scoped", "rls": "rw where org_id = current_org_id()",
+        "columns": [
+          { "name": "id", "type": "uuid", "key": "PK" },
+          { "name": "org_id", "type": "uuid", "key": "FK → orgs" },
+          { "name": "project_id", "type": "uuid", "key": "FK → projects" },
+          { "name": "company_name", "type": "text" },
+          { "name": "trade", "type": "text" },
+          { "name": "contract_value", "type": "numeric" },
+          { "name": "compliance_status", "type": "text", "note": "Compliant | Insufficient | Expired | Pending | Approved Exception" },
+          { "name": "manual_override", "type": "boolean" },
+          { "name": "override_notes", "type": "text" },
+          { "name": "vendor_type", "type": "text", "note": "Subcontractor | Supplier" },
+          { "name": "waiver_reason_type", "type": "text", "note": "nullable" },
+          { "name": "waiver_authorized_by", "type": "text", "note": "nullable" },
+          { "name": "waiver_expiration_date", "type": "date", "note": "nullable" },
+          { "name": "contact_email", "type": "text", "note": "vendor-direct email channel" },
+          { "name": "contact_name", "type": "text" },
+          { "name": "created_at", "type": "timestamptz" }
+        ]
+      },
+      {
+        "name": "coi_records", "tenancy": "org-scoped", "rls": "rw where org_id = current_org_id()",
+        "columns": [
+          { "name": "id", "type": "uuid", "key": "PK" },
+          { "name": "org_id", "type": "uuid", "key": "FK → orgs" },
+          { "name": "project_id", "type": "uuid", "key": "FK → projects" },
+          { "name": "subcontractor_id", "type": "uuid", "key": "FK → subcontractors" },
+          { "name": "file_name", "type": "text" },
+          { "name": "insured_extracted_name", "type": "text" },
+          { "name": "gl_occurrence_extracted", "type": "numeric" },
+          { "name": "gl_aggregate_extracted", "type": "numeric" },
+          { "name": "auto_combined_single_limit_extracted", "type": "numeric" },
+          { "name": "workers_comp_statutory_extracted", "type": "boolean" },
+          { "name": "policy_expiration_date_extracted", "type": "date", "note": "indexed for reminders" },
+          { "name": "umbrella / EL / professional / pollution …", "type": "numeric", "note": "full extracted limit set" },
+          { "name": "gl_form_extracted", "type": "text", "note": "Occurrence | Claims-Made | Unknown" },
+          { "name": "additional_insured_*_extracted", "type": "jsonb/bool/text" },
+          { "name": "endorsement_facts_extracted", "type": "jsonb" },
+          { "name": "custom_extractions", "type": "jsonb" },
+          { "name": "validation_errors", "type": "jsonb" },
+          { "name": "extraction_method", "type": "text", "note": "AI_Scan | Manual_Entry" },
+          { "name": "uploaded_at", "type": "timestamptz" }
+        ]
+      },
+      {
+        "name": "notifications", "tenancy": "org-scoped", "rls": "rw where org_id = current_org_id()",
+        "columns": [
+          { "name": "id", "type": "uuid", "key": "PK" },
+          { "name": "org_id", "type": "uuid", "key": "FK → orgs" },
+          { "name": "project_id", "type": "uuid", "key": "FK → projects" },
+          { "name": "project_name", "type": "text" },
+          { "name": "subcontractor_name", "type": "text" },
+          { "name": "type", "type": "text", "note": "danger | warning | info" },
+          { "name": "message", "type": "text" },
+          { "name": "resolved", "type": "boolean" },
+          { "name": "created_at", "type": "timestamptz" }
+        ]
+      },
+      {
+        "name": "coi_reminder_log", "tenancy": "org-scoped (service-role writes)", "rls": "read own; writes only from the edge function",
+        "columns": [
+          { "name": "id", "type": "uuid", "key": "PK" },
+          { "name": "org_id", "type": "uuid", "key": "FK → orgs" },
+          { "name": "coi_record_id", "type": "uuid", "key": "FK → coi_records" },
+          { "name": "subcontractor_id", "type": "uuid", "key": "FK → subcontractors" },
+          { "name": "project_id", "type": "uuid", "key": "FK → projects" },
+          { "name": "expiration_date", "type": "date" },
+          { "name": "bucket", "type": "text", "note": "30 | 7 | expired" },
+          { "name": "channel", "type": "text", "note": "in_app | email_team | email_vendor" },
+          { "name": "recipient", "type": "text" },
+          { "name": "status", "type": "text", "note": "sent | dry_run | failed" },
+          { "name": "created_at", "type": "timestamptz" }
+        ],
+        "note": "UNIQUE(coi_record_id, bucket, channel, recipient) — idempotency backstop for the daily run."
+      }
+    ]
+  },
+  "flows": [
+    {
+      "id": "auth-bootstrap", "title": "Auth & single-org bootstrap", "icon": "🔐",
+      "steps": [
+        "User submits LoginScreen (sign up or sign in) → supabase.auth.",
+        "On first-ever signup, the handle_new_user() trigger (SECURITY DEFINER) runs on auth.users insert.",
+        "First user: create orgs row + org_settings + an 'owner' profile. Later users: join the existing org as 'member'.",
+        "AuthContext receives the session via onAuthStateChange.",
+        "Root sees a session → renders <SettingsProvider> which loads org_settings, then <App>.",
+        "App.loadIdentity() + loadAllData() hydrate org name, profile, and all org-scoped records."
+      ]
+    },
+    {
+      "id": "coi-scan", "title": "Upload → scan → verify → persist a COI", "icon": "📄",
+      "steps": [
+        "In a project, the user clicks Upload/Re-Scan on a subcontractor → CoiUploadZone drawer opens.",
+        "Drag a certificate → POST /api/scan-coi with base64 file data.",
+        "scanCore (api/_scan) calls Gemini under a strict JSON schema — or returns canned data for named sandbox samples. Fails closed on any error (no fabricated values).",
+        "Extracted payload returns to App → VerificationDrawer opens beside the rendered document (DocumentViewer overlays field boxes).",
+        "verifyCompliance() runs live on the (editable) values → pass/fail matrix; the reviewer can override/waive.",
+        "On save → dbService.submitCoiRecord(): re-runs verifyCompliance, inserts coi_records, updates the subcontractor status (honoring active waivers), and creates a notification on errors.",
+        "App.loadAllData() refreshes the in-memory snapshot and every view updates."
+      ]
+    },
+    {
+      "id": "compliance-rules", "title": "How verifyCompliance decides status", "icon": "🛡️",
+      "steps": [
+        "resolveRequiredCoverage() = max(project baseline, trade rule) for umbrella / professional / pollution.",
+        "HARD checks (fail status): GL each-occurrence & aggregate, claims-made GL form, auto CSL, workers' comp, products-completed, umbrella, 3× employers' liability, professional, pollution, custom requirements, expiration.",
+        "ADVISORY checks (never fail; surface a 'verify' note): insured-name mismatch, additional-insured (named vs blanket), and opt-in endorsements (WOS / P&NC / per-project agg / completed-ops AI).",
+        "Final status: Expired if past the eval date; else Insufficient Coverage if any hard error remains; else Compliant.",
+        "A warning within the project's warn-days grace window is advisory (stays Compliant but is flagged)."
+      ]
+    },
+    {
+      "id": "reminders", "title": "Scheduled COI-expiration reminders", "icon": "⏰",
+      "steps": [
+        "pg_cron triggers send-expiry-reminders daily (Deno edge function, service-role key → bypasses RLS).",
+        "For each org: read reminder_settings; skip if disabled.",
+        "For each subcontractor on an active project: find the latest COI with an expiration date.",
+        "pickBucket(days) maps the cert to a single step: 30 → 7 → expired (fires each once).",
+        "Assemble channels: in_app (team) always; email_team / email_vendor only if email_enabled AND provider configured.",
+        "Claim a coi_reminder_log slot (UNIQUE index = idempotent) → insert a notification and/or send via Resend; release the slot on delivery failure so the next run retries."
+      ]
+    },
+    {
+      "id": "deploy", "title": "Build & deploy topology", "icon": "🚀",
+      "steps": [
+        "Dev: `npm run dev` runs server.ts (Express + Vite middleware) on :3020, serving the SPA and /api/scan-* locally.",
+        "CI (.github/workflows/ci.yml): typecheck (tsc --noEmit) → vitest → vite build on every push/PR.",
+        "Prod: Vercel builds the Vite SPA to /dist; /api/* become serverless functions; all other routes rewrite to index.html.",
+        "Data + auth live in Supabase; the reminder edge function runs on Supabase's daily cron independent of the web host."
+      ]
+    }
+  ]
+}
+</script>
+<script>
+(function(){
+  "use strict";
+  var DATA = JSON.parse(document.getElementById("archData").textContent);
+  var layerById = {}; DATA.layers.forEach(function(l){ layerById[l.id]=l; });
+  var nodeById = {};  DATA.nodes.forEach(function(n){ nodeById[n.id]=n; });
+  // Build reverse dependency (dependents) map
+  var dependents = {};
+  DATA.nodes.forEach(function(n){ (n.deps||[]).forEach(function(d){ (dependents[d]=dependents[d]||[]).push(n.id); }); });
+
+  /* ---------- header ---------- */
+  document.getElementById("subtitle").textContent = DATA.meta.tagline + " — " + DATA.meta.description;
+  var stats = [
+    ["Source files", DATA.nodes.filter(function(n){return n.loc>0;}).length + "+"],
+    ["Lines of code", (DATA.meta.totalSourceLines||0).toLocaleString()],
+    ["Layers", DATA.layers.length],
+    ["DB tables", DATA.database.tables.length],
+    ["Key flows", DATA.flows.length]
+  ];
+  document.getElementById("stats").innerHTML = stats.map(function(s){
+    return '<div class="stat"><b>'+s[1]+'</b><span>'+s[0]+'</span></div>';
+  }).join("");
+  document.getElementById("footer").innerHTML =
+    "Generated "+DATA.meta.generatedAt+" · "+DATA.meta.stack.join(" · ");
+
+  /* ---------- legend / layer filter ---------- */
+  var hidden = {};
+  var legend = document.getElementById("legend");
+  DATA.layers.forEach(function(l){
+    var el = document.createElement("div");
+    el.className = "lg on"; el.dataset.layer = l.id;
+    el.innerHTML = '<span class="dot" style="background:'+l.color+'"></span>'+l.label;
+    el.addEventListener("click", function(){
+      hidden[l.id] = !hidden[l.id];
+      el.classList.toggle("on", !hidden[l.id]);
+      el.classList.toggle("off", !!hidden[l.id]);
+      render();
+    });
+    legend.appendChild(el);
+  });
+
+  /* ---------- render bands + nodes ---------- */
+  var bands = document.getElementById("bands");
+  function render(){
+    bands.innerHTML = "";
+    DATA.layers.forEach(function(l){
+      if(hidden[l.id]) return;
+      var band = document.createElement("div");
+      band.className = "band"; band.style.borderColor = l.color+"33";
+      var nodesInLayer = DATA.nodes.filter(function(n){return n.layer===l.id;});
+      band.innerHTML =
+        '<div class="band-head">'+
+          '<span class="bar" style="background:'+l.color+'"></span>'+
+          '<h3 style="color:'+l.color+'">'+l.label+'</h3>'+
+          '<span class="blurb">'+l.blurb+'</span>'+
+        '</div>';
+      var nl = document.createElement("div"); nl.className = "nodes";
+      nodesInLayer.forEach(function(n){
+        var node = document.createElement("div");
+        node.className = "node"; node.dataset.id = n.id;
+        node.style.borderLeftColor = l.color;
+        node.innerHTML =
+          '<div class="nl">'+n.label+' <span class="badge">'+n.type+'</span></div>'+
+          (n.file ? '<div class="nt">'+shortPath(n.file)+'</div>' : '');
+        node.addEventListener("click", function(e){ e.stopPropagation(); openNode(n.id); });
+        node.addEventListener("mouseenter", function(){ hover(n.id); });
+        node.addEventListener("mouseleave", clearHover);
+        nl.appendChild(node);
+      });
+      band.appendChild(nl);
+      bands.appendChild(band);
+    });
+    scheduleEdges();
+  }
+  function shortPath(p){ return p.replace(/^src\//,"").replace(/^supabase\//,""); }
+  // Draw now + retry a couple of times. rAF can be deferred in a background/throttled
+  // tab, so we don't rely on it alone — layout is usually ready synchronously anyway.
+  function scheduleEdges(){
+    drawEdges();
+    if(window.requestAnimationFrame) requestAnimationFrame(drawEdges);
+    setTimeout(drawEdges, 80);
+    setTimeout(drawEdges, 300);
+  }
+
+  /* ---------- edges (SVG, computed from DOM positions) ---------- */
+  var svg = document.getElementById("edges");
+  var SVGNS = "http://www.w3.org/2000/svg";
+  function center(id){
+    var el = bands.querySelector('.node[data-id="'+id+'"]');
+    if(!el) return null;
+    var r = el.getBoundingClientRect(), s = svg.getBoundingClientRect();
+    return { x: r.left - s.left + r.width/2, y: r.top - s.top + r.height/2, el: el };
+  }
+  function drawEdges(){
+    var stage = document.querySelector(".stage");
+    svg.setAttribute("width", stage.offsetWidth);
+    svg.setAttribute("height", stage.offsetHeight);
+    while(svg.firstChild) svg.removeChild(svg.firstChild);
+    DATA.nodes.forEach(function(n){
+      (n.deps||[]).forEach(function(d){
+        var a = center(n.id), b = center(d);
+        if(!a || !b) return;
+        var col = (layerById[nodeById[d]?nodeById[d].layer:n.layer]||{}).color || "#33436b";
+        var path = document.createElementNS(SVGNS,"path");
+        var midY = (a.y+b.y)/2;
+        path.setAttribute("d","M "+a.x+" "+a.y+" C "+a.x+" "+midY+" "+b.x+" "+midY+" "+b.x+" "+b.y);
+        path.setAttribute("fill","none");
+        path.setAttribute("stroke",col);
+        path.setAttribute("stroke-width","1.1");
+        path.setAttribute("stroke-opacity","0.16");
+        path.dataset.from=n.id; path.dataset.to=d;
+        svg.appendChild(path);
+      });
+    });
+  }
+
+  /* ---------- hover: trace connected ---------- */
+  function connectedSet(id){
+    var set = {}; set[id]=1;
+    (nodeById[id].deps||[]).forEach(function(d){ set[d]=1; });
+    (dependents[id]||[]).forEach(function(d){ set[d]=1; });
+    return set;
+  }
+  function hover(id){
+    var set = connectedSet(id);
+    bands.querySelectorAll(".node").forEach(function(el){
+      var on = set[el.dataset.id];
+      el.classList.toggle("dim", !on);
+      el.classList.toggle("hot", el.dataset.id===id);
+    });
+    svg.querySelectorAll("path").forEach(function(p){
+      var on = (p.dataset.from===id || p.dataset.to===id);
+      p.setAttribute("stroke-opacity", on ? "0.85" : "0.05");
+      p.setAttribute("stroke-width", on ? "2" : "1");
+    });
+  }
+  function clearHover(){
+    bands.querySelectorAll(".node").forEach(function(el){ el.classList.remove("dim","hot"); });
+    svg.querySelectorAll("path").forEach(function(p){ p.setAttribute("stroke-opacity","0.16"); p.setAttribute("stroke-width","1.1"); });
+  }
+
+  /* ---------- detail drawer ---------- */
+  var drawer = document.getElementById("drawer");
+  function openNode(id){
+    var n = nodeById[id]; if(!n) return;
+    var l = layerById[n.layer];
+    document.getElementById("dTitle").textContent = n.label;
+    document.getElementById("dTitle").style.color = l.color;
+    document.getElementById("dPath").textContent = n.file || "";
+    var deps = (n.deps||[]).filter(function(d){return nodeById[d];});
+    var deps2 = (dependents[id]||[]).filter(function(d){return nodeById[d];});
+    var html = "";
+    html += '<div class="sec"><h4>Layer</h4><div class="chips"><span class="chip" style="border-color:'+l.color+'55;color:'+l.color+'">'+l.label+'</span><span class="chip">'+n.type+'</span></div></div>';
+    html += '<div class="sec"><h4>Role</h4><p>'+n.role+'</p></div>';
+    if(n.tech && n.tech.length) html += '<div class="sec"><h4>Tech</h4><div class="chips">'+n.tech.map(function(t){return '<span class="chip">'+t+'</span>';}).join("")+'</div></div>';
+    html += relSection("Depends on ("+deps.length+")", deps);
+    html += relSection("Used by ("+deps2.length+")", deps2);
+    document.getElementById("dBody").innerHTML = html;
+    document.getElementById("dBody").querySelectorAll(".relbtn").forEach(function(b){
+      b.addEventListener("click", function(){ openNode(b.dataset.id); });
+    });
+    drawer.classList.add("open");
+  }
+  function relSection(title, ids){
+    if(!ids.length) return '<div class="sec"><h4>'+title+'</h4><p style="color:var(--muted);font-size:12px">—</p></div>';
+    var rows = ids.map(function(d){
+      var nn = nodeById[d], ll = layerById[nn.layer];
+      return '<button class="relbtn" data-id="'+d+'"><span class="d" style="background:'+ll.color+'"></span>'+nn.label+'<span class="a">'+ll.label+' ›</span></button>';
+    }).join("");
+    return '<div class="sec"><h4>'+title+'</h4>'+rows+'</div>';
+  }
+  document.getElementById("dClose").addEventListener("click", function(){ drawer.classList.remove("open"); });
+  document.addEventListener("keydown", function(e){ if(e.key==="Escape") drawer.classList.remove("open"); });
+  document.getElementById("resetBtn").addEventListener("click", function(){
+    hidden={}; document.querySelectorAll(".lg").forEach(function(el){el.classList.add("on");el.classList.remove("off");});
+    drawer.classList.remove("open"); render();
+  });
+
+  /* ---------- data model ---------- */
+  var tablesEl = document.getElementById("tables");
+  tablesEl.innerHTML = DATA.database.tables.map(function(t){
+    var cols = t.columns.map(function(c){
+      var kb = c.key ? (/PK/.test(c.key) ? '<span class="kb pk">'+c.key+'</span>' : '<span class="kb fk">'+c.key+'</span>') : "";
+      return '<div class="col"><span class="cn">'+c.name+'</span>'+kb+'<span class="ct">'+c.type+'</span>'+
+             (c.note ? '<span class="note">'+c.note+'</span>' : '')+'</div>';
+    }).join("");
+    return '<div class="table-card">'+
+      '<div class="tc-head"><h3>'+t.name+'<span class="ten">'+t.tenancy+'</span></h3>'+
+      '<div class="tc-rls">🔒 '+t.rls+'</div></div>'+
+      '<div class="cols">'+cols+'</div>'+
+      (t.note ? '<div class="tc-note">'+t.note+'</div>' : '')+
+    '</div>';
+  }).join("");
+
+  /* ---------- flows ---------- */
+  document.getElementById("flows").innerHTML = DATA.flows.map(function(f){
+    return '<div class="flow"><h3>'+f.icon+' '+f.title+'</h3><ol>'+
+      f.steps.map(function(s){return '<li>'+s+'</li>';}).join("")+'</ol></div>';
+  }).join("");
+
+  /* ---------- tabs ---------- */
+  document.querySelectorAll(".tab").forEach(function(tab){
+    tab.addEventListener("click", function(){
+      document.querySelectorAll(".tab").forEach(function(t){t.classList.remove("active");});
+      tab.classList.add("active");
+      document.querySelectorAll(".view").forEach(function(v){v.classList.remove("active");});
+      document.getElementById("view-"+tab.dataset.view).classList.add("active");
+      if(tab.dataset.view==="arch") scheduleEdges();
+    });
+  });
+
+  window.addEventListener("resize", scheduleEdges);
+  window.addEventListener("load", scheduleEdges);
+  document.addEventListener("visibilitychange", function(){ if(!document.hidden) scheduleEdges(); });
+  render();
+})();
+</script>
+</body>
+</html>
