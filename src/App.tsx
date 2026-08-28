@@ -345,6 +345,9 @@ export default function App() {
       gl_form_extracted: payloadToSave.gl_form ?? "Unknown",
       endorsement_facts_extracted: payloadToSave.endorsement_facts ?? {},
       extraction_method: payloadToSave.extraction_method || "AI_Scan",
+      // Persisted so the "Needs Review" outcome survives the re-evaluation
+      // submitCoiRecord runs from the stored row.
+      unreadable_fields_extracted: payloadToSave.unreadable_fields ?? [],
     });
 
     // 3. Commit override state if chosen

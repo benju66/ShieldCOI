@@ -151,6 +151,11 @@ export interface CoiRecord {
   // Endorsement facts read off the certificate (WOS / P&NC / per-project
   // aggregate / completed-ops AI). Only evaluated when the project opts in.
   endorsement_facts_extracted?: EndorsementFacts;
+  // Field names the extractor could not read off this certificate (as opposed
+  // to values the certificate genuinely does not carry). Drives the
+  // "Needs Review" status. Absent/empty on manual entries, sandbox samples,
+  // and records written before wave 3 — all treated as fully legible.
+  unreadable_fields_extracted?: string[] | null;
   // Original certificate document in Storage (bucket "coi-documents"). Absent
   // on manual entries, sandbox samples, and records saved before documents
   // were archived (wave 2).

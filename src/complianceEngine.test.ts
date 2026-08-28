@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { countsAsCompliant } from "./complianceStatus";
 import { verifyCompliance, normalizeEntity, isNamedAdditionalInsured, matchEntityNames } from "./complianceEngine";
 import { Project, ProjectRequirements } from "./types";
 
@@ -701,13 +702,21 @@ describe("verifyCompliance — similar-name additional insured advisory", () => 
 
 // ---------------------------------------------------------------------------
 // Unreadable expiration dates (wave 1 hardening — fail closed)
+//
+// Wave 3 changed the LABEL here, not the guarantee. An unreadable date used to
+// report "Insufficient Coverage", which asserted a coverage shortfall we had no
+// evidence for; it now reports "Needs Review". The property these tests exist
+// to protect is unchanged and asserted explicitly below: an unreadable date
+// never passes.
 // ---------------------------------------------------------------------------
 
 describe("verifyCompliance — unreadable expiration date fails closed", () => {
   const expectFailsClosed = (badDate: string) => {
     const result = verifyCompliance(makeProject(), makeCoi({ policy_expiration_date: badDate }), "Other Trades", NOW);
     expect(hasError(result.errors, "could not be read as a valid date")).toBe(true);
-    expect(result.status).toBe("Insufficient Coverage");
+    expect(result.status).toBe("Needs Review");
+    // The guarantee, stated independently of the label it happens to carry.
+    expect(countsAsCompliant(result.status)).toBe(false);
   };
 
   it("fails a missing (empty) expiration date", () => {
@@ -735,6 +744,112 @@ describe("verifyCompliance — unreadable expiration date fails closed", () => {
   it("still accepts a valid future ISO date", () => {
     const result = verifyCompliance(makeProject(), makeCoi({ policy_expiration_date: "2027-06-11" }), "Other Trades", NOW);
     expect(hasError(result.errors, "could not be read")).toBe(false);
+    expect(result.status).toBe("Compliant");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Unreadable fields (wave 3) — "we could not read it" is neither a pass nor a
+// claimed shortfall.
+// ---------------------------------------------------------------------------
+
+describe("verifyCompliance — unreadable required fields go to review", () => {
+  it("returns Needs Review when a required limit could not be read", () => {
+    const result = verifyCompliance(
+      makeProject(),
+      makeCoi({ gl_each_occurrence: 0, unreadable_fields: ["gl_each_occurrence"] }),
+      "Other Trades",
+      NOW
+    );
+    expect(result.status).toBe("Needs Review");
+    expect(hasError(result.errors, "General Liability: Occurrence limit: could not be read")).toBe(true);
+  });
+
+  it("never claims a shortfall for a value it could not read", () => {
+    // The bug this prevents: reporting "limit ($0) is less than the required
+    // $2,000,000" about a box that was simply illegible, which would flag a
+    // vendor whose coverage is very likely fine.
+    const result = verifyCompliance(
+      makeProject(),
+      makeCoi({ gl_each_occurrence: 0, unreadable_fields: ["gl_each_occurrence"] }),
+      "Other Trades",
+      NOW
+    );
+    expect(hasError(result.errors, "is less than the required")).toBe(false);
+  });
+
+  it("never counts as compliant", () => {
+    const result = verifyCompliance(
+      makeProject(),
+      makeCoi({ umbrella_limit: 0, unreadable_fields: ["umbrella_limit"] }),
+      "Other Trades",
+      NOW
+    );
+    expect(countsAsCompliant(result.status)).toBe(false);
+  });
+
+  it("ignores an unreadable field the project does not require", () => {
+    // With no umbrella requirement on the project, an illegible umbrella box is
+    // noise — and a review queue full of noise stops being read.
+    const project = makeProject({ requirements: { umbrella_limit: 0 } });
+    const result = verifyCompliance(
+      project,
+      makeCoi({ umbrella_limit: 0, unreadable_fields: ["umbrella_limit"] }),
+      "Other Trades",
+      NOW
+    );
+    expect(result.status).toBe("Compliant");
+    expect(hasError(result.errors, "could not be read")).toBe(false);
+  });
+
+  it("lets a proven shortfall outrank an unknown", () => {
+    const result = verifyCompliance(
+      makeProject(),
+      makeCoi({
+        gl_general_aggregate: 1_000_000, // genuinely short
+        gl_each_occurrence: 0,
+        unreadable_fields: ["gl_each_occurrence"],
+      }),
+      "Other Trades",
+      NOW
+    );
+    expect(result.status).toBe("Insufficient Coverage");
+    // The review note is still surfaced to the reviewer alongside the shortfall.
+    expect(hasError(result.errors, "could not be read")).toBe(true);
+  });
+
+  it("lets an expired policy outrank an unknown", () => {
+    const result = verifyCompliance(
+      makeProject(),
+      makeCoi({ policy_expiration_date: "2026-01-01", unreadable_fields: ["gl_each_occurrence"] }),
+      "Other Trades",
+      NOW
+    );
+    expect(result.status).toBe("Expired");
+  });
+
+  it("sends an unreadable insured name to review", () => {
+    // A name we cannot read means we cannot confirm the certificate belongs to
+    // this vendor at all — distinct from a name that merely differs.
+    const result = verifyCompliance(
+      makeProject(),
+      makeCoi({ insured_name: "", unreadable_fields: ["insured_name"] }),
+      "Other Trades",
+      NOW,
+      {},
+      "Acme Electrical LLC"
+    );
+    expect(result.status).toBe("Needs Review");
+  });
+
+  it("leaves a fully legible certificate exactly as before", () => {
+    const result = verifyCompliance(makeProject(), makeCoi({ unreadable_fields: [] }), "Other Trades", NOW);
+    expect(result.status).toBe("Compliant");
+    expect(result.errors).toEqual([]);
+  });
+
+  it("treats an absent list as fully legible", () => {
+    const result = verifyCompliance(makeProject(), makeCoi(), "Other Trades", NOW);
     expect(result.status).toBe("Compliant");
   });
 });

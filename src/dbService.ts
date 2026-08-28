@@ -289,6 +289,9 @@ export async function submitCoiRecord(
       gl_addl_insd: coiData.gl_addl_insd_extracted,
       gl_form: coiData.gl_form_extracted,
       endorsement_facts: coiData.endorsement_facts_extracted,
+      // Without this the readability signal is lost on save and the record
+      // silently falls back to "Insufficient Coverage".
+      unreadable_fields: coiData.unreadable_fields_extracted ?? [],
     },
     trade,
     evalDate,

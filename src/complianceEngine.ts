@@ -84,16 +84,52 @@ export function verifyCompliance(
     gl_addl_insd?: boolean;
     gl_form?: "Occurrence" | "Claims-Made" | "Unknown";
     endorsement_facts?: EndorsementFacts;
+    /**
+     * Fields the extractor could not read off the certificate (as opposed to
+     * fields the certificate genuinely does not carry). See _scan.ts.
+     */
+    unreadable_fields?: string[];
   },
   subcontractorTrade: string = "Other Trades",
   currentDateStr: string,
   tradeRules: Record<string, TradeRule> = {},
   subcontractorLegalName: string = ""
-): { status: "Compliant" | "Insufficient Coverage" | "Expired" | "Pending Upload"; errors: string[] } {
+): { status: "Compliant" | "Insufficient Coverage" | "Needs Review" | "Expired" | "Pending Upload"; errors: string[] } {
   const errors: string[] = [];
   const req = project.requirements;
   const trade = (subcontractorTrade || "Other Trades").trim();
   const required = resolveRequiredCoverage(req, trade, tradeRules);
+
+  // ---------------------------------------------------------------------------
+  // Readability gate.
+  //
+  // A field we could not read is NOT a shortfall — claiming "limit ($0) is less
+  // than the required $1,000,000" about a box we never managed to read is a
+  // false statement, and one that would have the app cry wolf on vendors whose
+  // coverage is fine. So an unreadable required field suppresses its own
+  // shortfall check and raises a review flag instead.
+  //
+  // It is never a pass either: reviewFields drives the "Needs Review" status
+  // below, which counts as non-compliant everywhere it surfaces.
+  // ---------------------------------------------------------------------------
+  const unreadable = new Set(coi.unreadable_fields ?? []);
+  const reviewFields: string[] = [];
+
+  /** Marker phrase shared with the status filter and the attention list. */
+  const REVIEW_MARKER = "could not be read";
+
+  /**
+   * True when `field` is unreadable AND this project actually requires it — an
+   * unreadable umbrella box on a project with no umbrella requirement is noise,
+   * and a review queue full of noise stops being read. Records the flag and the
+   * reviewer-facing note as a side effect.
+   */
+  const unreadableRequired = (field: string, label: string, isRequired: boolean): boolean => {
+    if (!isRequired || !unreadable.has(field)) return false;
+    reviewFields.push(field);
+    errors.push(`${label}: ${REVIEW_MARKER} from the certificate — confirm this value manually.`);
+    return true;
+  };
 
   // 0. Insured-name identity — ADVISORY only. The certificate must be issued to
   // the vendor we enrolled; a certificate issued to a different legal entity
@@ -102,6 +138,10 @@ export function verifyCompliance(
   // "verify" advisory rather than failing status — the same conservative
   // treatment as blanket additional-insured language. Skipped when either name
   // is blank (e.g. legacy callers that don't pass the vendor name).
+  // An UNREADABLE insured name is a different thing from a mismatched one: we
+  // cannot confirm the certificate belongs to this vendor at all, so it goes to
+  // a human rather than passing quietly.
+  unreadableRequired("insured_name", "Insured Name", true);
   const insuredNorm = normalizeEntity(coi.insured_name || "");
   const legalNorm = normalizeEntity(subcontractorLegalName || "");
   if (insuredNorm && legalNorm && matchEntityNames(coi.insured_name, subcontractorLegalName) !== "match") {
@@ -111,14 +151,16 @@ export function verifyCompliance(
   }
 
   // 1. General Liability - Each Occurrence Limit ($)
-  if (coi.gl_each_occurrence < req.gl_occurrence) {
+  if (!unreadableRequired("gl_each_occurrence", "General Liability: Occurrence limit", req.gl_occurrence > 0) &&
+      coi.gl_each_occurrence < req.gl_occurrence) {
     errors.push(
       `General Liability: Occurrence limit ($${coi.gl_each_occurrence.toLocaleString()}) is less than the required $${req.gl_occurrence.toLocaleString()}.`
     );
   }
 
   // 2. General Liability - General Aggregate Limit ($)
-  if (coi.gl_general_aggregate < req.gl_aggregate) {
+  if (!unreadableRequired("gl_general_aggregate", "General Liability: General Aggregate limit", req.gl_aggregate > 0) &&
+      coi.gl_general_aggregate < req.gl_aggregate) {
     errors.push(
       `General Liability: General Aggregate limit ($${coi.gl_general_aggregate.toLocaleString()}) is less than the required $${req.gl_aggregate.toLocaleString()}.`
     );
@@ -136,7 +178,8 @@ export function verifyCompliance(
   }
 
   // 3. Automobile Liability - Combined Single Limit ($)
-  if (coi.auto_combined_single_limit < req.auto_limit) {
+  if (!unreadableRequired("auto_combined_single_limit", "Automobile Liability: Combined Single Limit", req.auto_limit > 0) &&
+      coi.auto_combined_single_limit < req.auto_limit) {
     errors.push(
       `Automobile Liability: Combined Single Limit ($${coi.auto_combined_single_limit.toLocaleString()}) is less than the required $${req.auto_limit.toLocaleString()}.`
     );
@@ -150,7 +193,8 @@ export function verifyCompliance(
   // 5. General Liability - Products-Completed Aggregate ($)
   const glProductsCompleted = coi.gl_products_completed ?? 0;
   const requiredGlProductsCompleted = req.gl_products_completed ?? 2000000;
-  if (glProductsCompleted < requiredGlProductsCompleted) {
+  if (!unreadableRequired("gl_products_completed", "General Liability: Products-Completed Aggregate", requiredGlProductsCompleted > 0) &&
+      glProductsCompleted < requiredGlProductsCompleted) {
     errors.push(
       `General Liability: Products-Completed Aggregate limit ($${glProductsCompleted.toLocaleString()}) is less than the required $${requiredGlProductsCompleted.toLocaleString()}.`
     );
@@ -158,7 +202,8 @@ export function verifyCompliance(
 
   // 6. Umbrella / Excess Liability (project baseline, raised by any trade rule)
   const umbrellaLimit = coi.umbrella_limit ?? 0;
-  if (required.umbrella > 0 && umbrellaLimit < required.umbrella) {
+  if (!unreadableRequired("umbrella_limit", "Umbrella / Excess Liability", required.umbrella > 0) &&
+      required.umbrella > 0 && umbrellaLimit < required.umbrella) {
     errors.push(
       `Umbrella / Excess Liability: Limit ($${umbrellaLimit.toLocaleString()}) is less than the required $${required.umbrella.toLocaleString()}.`
     );
@@ -167,7 +212,8 @@ export function verifyCompliance(
   // 7. Employers' Liability - Accident ($)
   const elAccident = coi.employers_liability_accident ?? 0;
   const requiredElAccident = req.employers_liability_accident ?? 1000000;
-  if (elAccident < requiredElAccident) {
+  if (!unreadableRequired("employers_liability_accident", "Employers' Liability: Accident limit", requiredElAccident > 0) &&
+      elAccident < requiredElAccident) {
     errors.push(
       `Employers' Liability: Accident limit ($${elAccident.toLocaleString()}) is less than the required $${requiredElAccident.toLocaleString()}.`
     );
@@ -176,7 +222,8 @@ export function verifyCompliance(
   // 8. Employers' Liability - Disease (Per Person) ($)
   const elDiseasePerson = coi.employers_liability_disease_person ?? 0;
   const requiredElDiseasePerson = req.employers_liability_disease_person ?? 1000000;
-  if (elDiseasePerson < requiredElDiseasePerson) {
+  if (!unreadableRequired("employers_liability_disease_person", "Employers' Liability: Disease (Per Person) limit", requiredElDiseasePerson > 0) &&
+      elDiseasePerson < requiredElDiseasePerson) {
     errors.push(
       `Employers' Liability: Disease (Per Person) limit ($${elDiseasePerson.toLocaleString()}) is less than the required $${requiredElDiseasePerson.toLocaleString()}.`
     );
@@ -185,7 +232,8 @@ export function verifyCompliance(
   // 9. Employers' Liability - Disease (Policy Limit) ($)
   const elDiseaseLimit = coi.employers_liability_disease_limit ?? 0;
   const requiredElDiseaseLimit = req.employers_liability_disease_limit ?? 1000000;
-  if (elDiseaseLimit < requiredElDiseaseLimit) {
+  if (!unreadableRequired("employers_liability_disease_limit", "Employers' Liability: Disease (Policy Limit) limit", requiredElDiseaseLimit > 0) &&
+      elDiseaseLimit < requiredElDiseaseLimit) {
     errors.push(
       `Employers' Liability: Disease (Policy Limit) limit ($${elDiseaseLimit.toLocaleString()}) is less than the required $${requiredElDiseaseLimit.toLocaleString()}.`
     );
@@ -194,7 +242,8 @@ export function verifyCompliance(
   // 10. Professional Liability (project baseline, raised by any trade rule)
   if (required.professionalLiability > 0) {
     const professionalVal = coi.professional_liability ?? 0;
-    if (professionalVal < required.professionalLiability) {
+    if (!unreadableRequired("professional_liability", "Professional Liability", true) &&
+        professionalVal < required.professionalLiability) {
       errors.push(
         `Professional Liability: Limit ($${professionalVal.toLocaleString()}) is less than the required $${required.professionalLiability.toLocaleString()}.`
       );
@@ -204,7 +253,8 @@ export function verifyCompliance(
   // 11. Pollution Liability (project baseline, raised by any trade rule)
   if (required.pollutionLiability > 0) {
     const pollutionVal = coi.pollution_liability ?? 0;
-    if (pollutionVal < required.pollutionLiability) {
+    if (!unreadableRequired("pollution_liability", "Pollution Liability", true) &&
+        pollutionVal < required.pollutionLiability) {
       errors.push(
         `Pollution Liability: Limit ($${pollutionVal.toLocaleString()}) is less than the required $${required.pollutionLiability.toLocaleString()}.`
       );
@@ -221,8 +271,11 @@ export function verifyCompliance(
 
   let isExpired = false;
   if (!dateReadable) {
+    // Still fails closed — "Needs Review" never passes — but it is now stated
+    // honestly: we cannot read the date, not "the coverage is insufficient".
+    reviewFields.push("policy_expiration_date");
     errors.push(
-      `Policy expiration date ${expDateStr ? `"${expDateStr}"` : "is missing"} — could not be read as a valid date (YYYY-MM-DD). Coverage cannot be verified without it; confirm the date on the certificate.`
+      `Policy expiration date ${expDateStr ? `"${expDateStr}"` : "is missing"} — ${REVIEW_MARKER} as a valid date (YYYY-MM-DD). Coverage cannot be verified without it; confirm the date on the certificate.`
     );
   } else if (expiration <= current) {
     isExpired = true;
@@ -321,7 +374,11 @@ export function verifyCompliance(
     if (endReq.completed_ops_ai) adviseEndorsement(facts.completed_ops_ai, "Completed-Operations Additional Insured", "CG 20 37");
   }
 
-  let finalStatus: "Compliant" | "Insufficient Coverage" | "Expired" | "Pending Upload" = "Compliant";
+  // Precedence: a confirmed problem outranks an unknown, and an unknown outranks
+  // a pass. An expired policy is the most actionable fact we have; a proven
+  // shortfall is next; "we could not read it" only decides the outcome when
+  // nothing worse was actually established.
+  let finalStatus: "Compliant" | "Insufficient Coverage" | "Needs Review" | "Expired" | "Pending Upload" = "Compliant";
   if (isExpired) {
     finalStatus = "Expired";
   } else if (
@@ -330,11 +387,16 @@ export function verifyCompliance(
         !err.includes("risk grace threshold") &&
         !err.includes("the endorsement") &&
         !err.includes("does not match the enrolled vendor") &&
-        !err.includes("verify it refers to the same entity")
+        !err.includes("verify it refers to the same entity") &&
+        // Readability notes are not shortfalls — they must not be mistaken for
+        // proof that coverage is short.
+        !err.includes(REVIEW_MARKER)
     )
   ) {
     // If we have actual limit shortfalls, or missing WC / structural gaps
     finalStatus = "Insufficient Coverage";
+  } else if (reviewFields.length > 0) {
+    finalStatus = "Needs Review";
   } else {
     finalStatus = "Compliant";
   }
