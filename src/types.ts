@@ -79,13 +79,32 @@ export type TradeType =
   | "Electrical"
   | "Other Trades";
 
+/**
+ * Compliance outcome for one subcontractor on one project.
+ *
+ * "Needs Review" means the certificate arrived but at least one required value
+ * could not be read off it (poor scan, cropped box, ambiguous wording). It is
+ * deliberately distinct from "Insufficient Coverage": we are not asserting the
+ * coverage is short, only that a human has to look. It never counts as passing.
+ *
+ * Behaviour for each status lives in complianceStatus.ts as exhaustive Record
+ * maps — add a member here and the compiler will point at every decision.
+ */
+export type ComplianceStatus =
+  | "Compliant"
+  | "Insufficient Coverage"
+  | "Needs Review"
+  | "Expired"
+  | "Pending Upload"
+  | "Approved Exception";
+
 export interface Subcontractor {
   id: string;
   project_id: string;
   company_name: string;
   trade: TradeType | string;
   contract_value: number;
-  compliance_status: "Compliant" | "Insufficient Coverage" | "Expired" | "Pending Upload" | "Approved Exception";
+  compliance_status: ComplianceStatus;
   manual_override: boolean;
   override_notes: string;
   createdAt: string;

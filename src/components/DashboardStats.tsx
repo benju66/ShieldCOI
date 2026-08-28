@@ -1,5 +1,6 @@
 import { ShieldAlert, Folder, Percent, CheckCircle2 } from "lucide-react";
 import { Project, Subcontractor } from "../types";
+import { countsAsCompliant, countsAsBreach } from "../complianceStatus";
 
 interface DashboardStatsProps {
   projects: Project[];
@@ -12,15 +13,16 @@ export default function DashboardStats({ projects, subcontractors }: DashboardSt
 
   // Calculate compliance rate
   const compliantCount = subcontractors.filter(
-    (s) => s.compliance_status === "Compliant" || s.manual_override === true
+    (s) => countsAsCompliant(s.compliance_status) || s.manual_override === true
   ).length;
 
   const complianceRate = totalSubs > 0 ? Math.round((compliantCount / totalSubs) * 100) : 100;
 
-  // Flagged/Expired subcontractors
-  const flaggedCount = subcontractors.filter(
-    (s) => s.compliance_status === "Expired" || s.compliance_status === "Insufficient Coverage"
-  ).length;
+  // Flagged breaches: confirmed coverage problems only. Driven by the shared
+  // table rather than a literal list so a new status has to declare whether it
+  // belongs here. "Needs Review" deliberately does not — it is an unknown, and
+  // it surfaces in the Needs Attention list instead.
+  const flaggedCount = subcontractors.filter((s) => countsAsBreach(s.compliance_status)).length;
 
   return (
     <div id="stats-dashboard-grid" className="grid grid-cols-1 md:grid-cols-4 gap-3.5 mb-4">

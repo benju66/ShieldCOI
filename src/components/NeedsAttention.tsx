@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { ShieldAlert, Clock, TrendingDown, FileX, Upload, ArrowRight, CheckCircle2 } from "lucide-react";
+import { ShieldAlert, Clock, TrendingDown, FileX, Upload, ArrowRight, CheckCircle2, HelpCircle } from "lucide-react";
 import { Project, Subcontractor, CoiRecord } from "../types";
 
-type Kind = "expired" | "insufficient" | "expiring" | "missing";
+type Kind = "expired" | "insufficient" | "review" | "expiring" | "missing";
 
 interface AttentionItem {
   sub: Subcontractor;
@@ -25,11 +25,12 @@ interface NeedsAttentionProps {
 const KIND_META: Record<Kind, { badge: string; icon: typeof ShieldAlert }> = {
   expired: { badge: "text-red-800 bg-red-50 border-red-200/80", icon: ShieldAlert },
   insufficient: { badge: "text-amber-800 bg-amber-50 border-amber-200/80", icon: TrendingDown },
+  review: { badge: "text-violet-800 bg-violet-50 border-violet-200/80", icon: HelpCircle },
   expiring: { badge: "text-amber-800 bg-amber-50 border-amber-200/80", icon: Clock },
   missing: { badge: "text-slate-600 bg-slate-50 border-slate-200", icon: FileX },
 };
 
-const ORDER: Kind[] = ["expired", "insufficient", "expiring", "missing"];
+const ORDER: Kind[] = ["expired", "insufficient", "review", "expiring", "missing"];
 
 function daysUntil(dateStr: string, refDate: string): number {
   return Math.ceil((new Date(dateStr).getTime() - new Date(refDate).getTime()) / (1000 * 60 * 60 * 24));
@@ -52,6 +53,11 @@ export default function NeedsAttention({ projects, subcontractors, coiMap, evalD
     } else if (sub.compliance_status === "Insufficient Coverage") {
       const err = coi?.validation_errors?.find((e) => !e.includes("risk grace threshold") && !e.includes("Verify the endorsement"));
       items.push({ ...base, kind: "insufficient", detail: err ? err.replace(/\s*\(.*$/, "").slice(0, 72) : "Coverage below required limits" });
+    } else if (sub.compliance_status === "Needs Review") {
+      // The certificate is on file but at least one value could not be read.
+      // Surfaced here (never as a breach) so a human actually looks at it.
+      const err = coi?.validation_errors?.find((e) => e.includes("could not be read"));
+      items.push({ ...base, kind: "review", detail: err ? err.slice(0, 72) : "Certificate needs manual verification" });
     } else if (sub.compliance_status === "Pending Upload") {
       items.push({ ...base, kind: "missing", detail: "No certificate uploaded yet" });
     } else if (sub.compliance_status === "Compliant") {
@@ -94,6 +100,7 @@ export default function NeedsAttention({ projects, subcontractors, coiMap, evalD
           {chip("expiring", "Expiring", countOf("expiring"))}
           {chip("expired", "Expired", countOf("expired"))}
           {chip("insufficient", "Insufficient", countOf("insufficient"))}
+          {chip("review", "Needs Review", countOf("review"))}
           {chip("missing", "No COI", countOf("missing"))}
         </div>
       </div>

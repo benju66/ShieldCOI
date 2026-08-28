@@ -219,6 +219,8 @@ export default function ExecutivePrintReport({
                   statusStyle = "text-red-800 font-bold underline";
                 } else if (printStatus === "Insufficient Coverage") {
                   statusStyle = "text-amber-800 font-semibold";
+                } else if (printStatus === "Needs Review") {
+                  statusStyle = "text-violet-800 font-semibold";
                 } else if (printStatus === "Approved Exception") {
                   statusStyle = "text-indigo-800 font-semibold italic";
                 }

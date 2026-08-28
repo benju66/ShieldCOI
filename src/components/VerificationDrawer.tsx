@@ -49,7 +49,9 @@ interface VerificationDrawerProps {
   onSave: (
     manualOverride: boolean,
     notes: string,
-    status: "Compliant" | "Insufficient Coverage" | "Expired" | "Approved Exception",
+    // Widened ahead of the engine emitting it, so the review flow accepts a
+    // "Needs Review" outcome the moment extraction can produce one.
+    status: "Compliant" | "Insufficient Coverage" | "Needs Review" | "Expired" | "Approved Exception",
     waiverReasonType: "Low Contract Value" | "Low-Risk Scope" | "Executive Discretion" | "Temporary Extension" | null,
     waiverAuthorizedBy: string | null,
     waiverExpirationDate: string | null,

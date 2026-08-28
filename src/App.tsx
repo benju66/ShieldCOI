@@ -52,6 +52,7 @@ import {
 
 import { Project, Subcontractor, Notification, CoiRecord, EndorsementFacts } from "./types";
 import { uploadCoiDocument } from "./storageService";
+import { statusBadgeClass } from "./complianceStatus";
 import DashboardStats from "./components/DashboardStats";
 import NeedsAttention from "./components/NeedsAttention";
 import ProjectForm from "./components/ProjectForm";
@@ -241,11 +242,13 @@ export default function App() {
     const hasExpired = subs.some((s) => s.compliance_status === "Expired");
     const hasInsufficient = subs.some((s) => s.compliance_status === "Insufficient Coverage");
     const hasPending = subs.some((s) => s.compliance_status === "Pending Upload");
+    // A certificate we could not fully read is action-needed, not an expiration.
+    const hasNeedsReview = subs.some((s) => s.compliance_status === "Needs Review");
 
     if (hasExpired) {
       return { label: "Active Expirations", color: "text-red-400 bg-red-500/10 border-red-500/20" };
     }
-    if (hasInsufficient || hasPending) {
+    if (hasInsufficient || hasPending || hasNeedsReview) {
       return { label: "Action Needed", color: "text-amber-400 bg-amber-500/10 border-amber-500/20" };
     }
     return { label: "Fully Compliant", color: "text-emerald-400 bg-emerald-500/10 border-emerald-550/20" };
@@ -772,17 +775,9 @@ export default function App() {
                           activeSubs.map((sub) => {
                             const isSelectedForUpload = activeSubForUpload?.id === sub.id;
 
-                            // Badges mapper
-                            let badgeStyle = "text-slate-650 bg-slate-50 border-slate-250";
-                            if (sub.compliance_status === "Compliant") {
-                              badgeStyle = "text-emerald-800 bg-emerald-50 border-emerald-200/80";
-                            } else if (sub.compliance_status === "Expired") {
-                              badgeStyle = "text-red-800 bg-red-50 border-red-200/80 font-bold";
-                            } else if (sub.compliance_status === "Insufficient Coverage") {
-                              badgeStyle = "text-amber-800 bg-amber-50 border-amber-200/80";
-                            } else if (sub.compliance_status === "Approved Exception") {
-                              badgeStyle = "text-indigo-800 bg-indigo-50 border-indigo-200/80 font-bold";
-                            }
+                            // Badge palette is shared with the vendor table, so a
+                            // new status is styled once rather than per screen.
+                            const badgeStyle = statusBadgeClass(sub.compliance_status);
 
                             return (
                               <tr

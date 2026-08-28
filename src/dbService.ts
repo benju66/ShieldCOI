@@ -362,6 +362,8 @@ export async function submitCoiRecord(
     let alertType: "danger" | "warning" | "info" = "warning";
     if (evaluation.status === "Expired") alertType = "danger";
     else if (evaluation.status === "Insufficient Coverage") alertType = "warning";
+    // NOTE: verifyCompliance cannot yet return "Needs Review" — when extraction
+    // learns to flag unreadable fields, add an explicit "info" branch here.
 
     await createNotification({
       project_id: projectId,

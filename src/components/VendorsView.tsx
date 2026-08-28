@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Building2, ChevronRight, ChevronUp, ChevronDown, Search, Layers, ArrowRight } from "lucide-react";
 import { Project, Subcontractor, CoiRecord } from "../types";
 import { buildVendorSummaries, statusSeverity, ComplianceStatus } from "../vendors";
+import { STATUS_BADGE_CLASS } from "../complianceStatus";
 import { formatUSD } from "../utils/currency";
 
 type SortKey = "attention" | "name" | "projects";
@@ -25,13 +26,9 @@ interface VendorsViewProps {
   onOpenProject: (projectId: string) => void;
 }
 
-const STATUS_BADGE: Record<ComplianceStatus, string> = {
-  Compliant: "text-emerald-800 bg-emerald-50 border-emerald-200/80",
-  Expired: "text-red-800 bg-red-50 border-red-200/80 font-bold",
-  "Insufficient Coverage": "text-amber-800 bg-amber-50 border-amber-200/80",
-  "Approved Exception": "text-indigo-800 bg-indigo-50 border-indigo-200/80 font-bold",
-  "Pending Upload": "text-slate-600 bg-slate-50 border-slate-250",
-};
+// Palette moved to complianceStatus.ts — shared with the project table so a new
+// status is styled in exactly one place.
+const STATUS_BADGE = STATUS_BADGE_CLASS;
 
 function StatusBadge({ status }: { status: ComplianceStatus }) {
   return (

@@ -1,4 +1,5 @@
-import { Subcontractor, Project, CoiRecord } from "./types";
+import { Subcontractor, Project, CoiRecord, ComplianceStatus } from "./types";
+import { STATUS_SEVERITY } from "./complianceStatus";
 
 /**
  * Vendor roll-up: the same company is enrolled per-project (each is its own
@@ -6,7 +7,7 @@ import { Subcontractor, Project, CoiRecord } from "./types";
  * vendor with a status roll-up across every project they work on.
  */
 
-export type ComplianceStatus = Subcontractor["compliance_status"];
+export type { ComplianceStatus };
 
 export interface VendorProjectEntry {
   subId: string;
@@ -33,14 +34,8 @@ export interface VendorSummary {
   earliestExpiration: string | null;
 }
 
-/** Higher = more attention-worthy. Drives roll-up and sort order. */
-const STATUS_SEVERITY: Record<ComplianceStatus, number> = {
-  Expired: 4,
-  "Insufficient Coverage": 3,
-  "Pending Upload": 2,
-  "Approved Exception": 1,
-  Compliant: 0,
-};
+// Severity ordering now lives in complianceStatus.ts alongside the other
+// per-status behaviour tables, so a new status is one edit, not a hunt.
 
 /** Numeric attention weight for a status (higher = needs more attention). */
 export function statusSeverity(status: ComplianceStatus): number {
