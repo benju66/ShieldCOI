@@ -57,6 +57,19 @@ export function isNamedAdditionalInsured(reqName: string, namedList: string[] = 
   return bestEntityMatch(reqName, namedList) === "match";
 }
 
+/** Marker phrases identifying notes that ask a human to look, rather than assert a failure. */
+const REVIEW_MARKER = "could not be read";
+const DISPUTE_MARKER = "two independent readings disagree";
+
+/**
+ * True for a validation note that asks a reviewer to confirm something, as
+ * opposed to one asserting an actual coverage problem. Exported so the review
+ * drawer filters on the same definition the status resolution uses.
+ */
+export function isReviewNote(error: string): boolean {
+  return error.includes(REVIEW_MARKER) || error.includes(DISPUTE_MARKER);
+}
+
 /**
  * Calculates compliance status and list of errors for a subcontractor's COI record
  * against the parent project's requirements, parsing both the project's global baselines
@@ -89,6 +102,12 @@ export function verifyCompliance(
      * fields the certificate genuinely does not carry). See _scan.ts.
      */
     unreadable_fields?: string[];
+    /**
+     * Fields where the AI reading and the PDF text layer disagree. See
+     * coiTextParse.ts — two independent readings that conflict mean we do not
+     * know the value, which is a question for a human rather than a verdict.
+     */
+    disputed_fields?: string[];
   },
   subcontractorTrade: string = "Other Trades",
   currentDateStr: string,
@@ -113,22 +132,34 @@ export function verifyCompliance(
   // below, which counts as non-compliant everywhere it surfaces.
   // ---------------------------------------------------------------------------
   const unreadable = new Set(coi.unreadable_fields ?? []);
+  const disputed = new Set(coi.disputed_fields ?? []);
   const reviewFields: string[] = [];
 
-  /** Marker phrase shared with the status filter and the attention list. */
-  const REVIEW_MARKER = "could not be read";
-
   /**
-   * True when `field` is unreadable AND this project actually requires it — an
-   * unreadable umbrella box on a project with no umbrella requirement is noise,
+   * True when `field` needs a human AND this project actually requires it — an
+   * illegible umbrella box on a project with no umbrella requirement is noise,
    * and a review queue full of noise stops being read. Records the flag and the
    * reviewer-facing note as a side effect.
+   *
+   * A DISPUTED field suppresses its shortfall check for the same reason an
+   * unreadable one does: when two independent readings conflict we do not know
+   * the value, so asserting it falls short would be stating something we cannot
+   * support. (A refinement worth having later: when BOTH readings sit below the
+   * requirement it is short either way, and could still fail outright.)
    */
   const unreadableRequired = (field: string, label: string, isRequired: boolean): boolean => {
-    if (!isRequired || !unreadable.has(field)) return false;
-    reviewFields.push(field);
-    errors.push(`${label}: ${REVIEW_MARKER} from the certificate — confirm this value manually.`);
-    return true;
+    if (!isRequired) return false;
+    if (unreadable.has(field)) {
+      reviewFields.push(field);
+      errors.push(`${label}: ${REVIEW_MARKER} from the certificate — confirm this value manually.`);
+      return true;
+    }
+    if (disputed.has(field)) {
+      reviewFields.push(field);
+      errors.push(`${label}: ${DISPUTE_MARKER} — the AI reading and the document's own text do not match; confirm this value against the certificate.`);
+      return true;
+    }
+    return false;
   };
 
   // 0. Insured-name identity — ADVISORY only. The certificate must be issued to
@@ -388,9 +419,9 @@ export function verifyCompliance(
         !err.includes("the endorsement") &&
         !err.includes("does not match the enrolled vendor") &&
         !err.includes("verify it refers to the same entity") &&
-        // Readability notes are not shortfalls — they must not be mistaken for
-        // proof that coverage is short.
-        !err.includes(REVIEW_MARKER)
+        // Notes asking a human to confirm something are not shortfalls — they
+        // must not be mistaken for proof that coverage is short.
+        !isReviewNote(err)
     )
   ) {
     // If we have actual limit shortfalls, or missing WC / structural gaps

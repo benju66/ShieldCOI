@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { X, Check, ShieldCheck, ShieldAlert, FileWarning, Eye, HelpCircle } from "lucide-react";
 import { Project, EndorsementFacts } from "../types";
-import { verifyCompliance, isNamedAdditionalInsured, matchEntityNames } from "../complianceEngine";
+import { verifyCompliance, isNamedAdditionalInsured, matchEntityNames, isReviewNote } from "../complianceEngine";
+import { CrossCheck } from "../coiTextParse";
 import { formatUSD } from "../utils/currency";
 import DocumentViewer, { ACORD25_FIELD_TEMPLATE } from "./DocumentViewer";
 import CurrencyInput from "./CurrencyInput";
@@ -34,6 +35,8 @@ interface VerificationDrawerProps {
     professional_liability?: number | null;
     pollution_liability?: number | null;
     unreadable_fields?: string[];
+    /** Comparison of the AI reading against the PDF text layer. */
+    cross_check?: CrossCheck;
     file_name: string;
     simulated: boolean;
     warning?: string;
@@ -102,6 +105,8 @@ export default function VerificationDrawer({
      * "we could not read this box".
      */
     unreadable_fields?: string[];
+    /** Comparison of the AI reading against the PDF text layer. */
+    cross_check?: CrossCheck;
     file_name: string;
     simulated: boolean;
     warning?: string;
@@ -142,6 +147,7 @@ export default function VerificationDrawer({
         professional_liability: extractedData.professional_liability || 0,
         pollution_liability: extractedData.pollution_liability || 0,
         unreadable_fields: extractedData.unreadable_fields || [],
+        cross_check: extractedData.cross_check,
         file_name: extractedData.file_name || "",
         simulated: !!extractedData.simulated,
         warning: extractedData.warning,
@@ -175,14 +181,22 @@ export default function VerificationDrawer({
   // "unreadable" any more — a human has stated it. Without this a certificate
   // would stay stuck in Needs Review even after someone keyed the values in.
   const isManualEntry = activeData.extraction_method === "Manual_Entry";
-  const analysisInput = isManualEntry ? { ...activeData, unreadable_fields: [] } : activeData;
+  const crossCheck = activeData.cross_check;
+  const analysisInput = isManualEntry
+    ? { ...activeData, unreadable_fields: [], disputed_fields: [] }
+    : { ...activeData, disputed_fields: crossCheck?.disputed ?? [] };
   const analysis = verifyCompliance(project, analysisInput, trade, evaluationDate, tradeRules, subContractorName);
 
-  // Reviewer-facing readability notes. Reusing the engine's own messages keeps
-  // one source of truth for the field labels.
-  const reviewNotes = analysis.errors.filter((e) => e.includes("could not be read"));
+  // Reviewer-facing notes. Reusing the engine's own messages and predicate keeps
+  // one source of truth for both the field labels and what counts as a note.
+  const reviewNotes = analysis.errors.filter(isReviewNote);
 
-  const unreadableSet = new Set(analysisInput.unreadable_fields ?? []);
+  // Rows needing a human: unreadable or disputed. Both render as the third
+  // state — neither is a shortfall we are in a position to assert.
+  const unreadableSet = new Set([
+    ...(analysisInput.unreadable_fields ?? []),
+    ...(analysisInput.disputed_fields ?? []),
+  ]);
 
   /**
    * Row styling with a third state. A value we could not read is neither a pass
@@ -400,13 +414,54 @@ export default function VerificationDrawer({
                   {reviewNotes.length === 1 ? "1 value could not be read" : `${reviewNotes.length} values could not be read`}
                 </span>
                 <span className="text-slate-650 font-medium block mb-1.5">
-                  These are shown as $0 below because nothing was extracted — that is not what the certificate says. Check them against the document, then switch to manual entry to record the real figures.
+                  Shown as &ldquo;Not readable&rdquo; below rather than $0 — nothing was extracted, which is not the same as the certificate saying zero. Check them against the document, then switch to manual entry to record the real figures.
                 </span>
                 <ul className="list-disc list-inside space-y-0.5 text-violet-900 font-medium">
                   {reviewNotes.map((note) => (
                     <li key={note}>{note.split(":")[0]}</li>
                   ))}
                 </ul>
+              </div>
+            </div>
+          )}
+
+          {/* How much verification actually happened. Deliberately explicit about
+              the negative case: photos, scans, and faxes carry no text layer, so
+              the app must not let a single reading look like a confirmed one. */}
+          {!isManualMode && !activeData.simulated && crossCheck && (
+            <div
+              id="cross-check-banner"
+              className={`p-3 rounded-lg flex items-start space-x-2 text-xs border ${
+                crossCheck.hadTextLayer
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-950"
+                  : "bg-slate-50 border-slate-200 text-slate-800"
+              }`}
+            >
+              {crossCheck.hadTextLayer ? (
+                <ShieldCheck className="h-4 w-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+              ) : (
+                <FileWarning className="h-4 w-4 text-slate-500 flex-shrink-0 mt-0.5" />
+              )}
+              <div>
+                {crossCheck.hadTextLayer ? (
+                  <>
+                    <span className="font-bold block text-emerald-900">
+                      {crossCheck.agreed.length} value{crossCheck.agreed.length === 1 ? "" : "s"} confirmed by two independent readings
+                    </span>
+                    <span className="text-slate-650 font-medium">
+                      The AI reading was checked against the document&rsquo;s own text layer.
+                      {crossCheck.disputed.length > 0 && ` ${crossCheck.disputed.length} disagreed and ${crossCheck.disputed.length === 1 ? "is" : "are"} flagged below.`}
+                      {crossCheck.unverified.length > 0 && ` ${crossCheck.unverified.length} could only be read by one source.`}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="font-bold block text-slate-900">Single source — no second reading available</span>
+                    <span className="text-slate-650 font-medium">
+                      This document has no text layer (it is a photo, scan, or fax), so the extracted values could not be independently confirmed. Check them against the certificate before relying on them.
+                    </span>
+                  </>
+                )}
               </div>
             </div>
           )}

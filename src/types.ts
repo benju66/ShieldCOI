@@ -156,6 +156,16 @@ export interface CoiRecord {
   // "Needs Review" status. Absent/empty on manual entries, sandbox samples,
   // and records written before wave 3 — all treated as fully legible.
   unreadable_fields_extracted?: string[] | null;
+  // Comparison of the AI reading against the PDF text layer: which values both
+  // sources confirmed, which they disagree on, and whether a second reading was
+  // possible at all. Null on manual entries, sandbox samples, images/scans with
+  // no text layer, and records written before wave 3.
+  cross_check_extracted?: {
+    agreed: string[];
+    disputed: string[];
+    unverified: string[];
+    hadTextLayer: boolean;
+  } | null;
   // Original certificate document in Storage (bucket "coi-documents"). Absent
   // on manual entries, sandbox samples, and records saved before documents
   // were archived (wave 2).

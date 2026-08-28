@@ -53,6 +53,7 @@ import {
 import { Project, Subcontractor, Notification, CoiRecord, EndorsementFacts } from "./types";
 import { uploadCoiDocument } from "./storageService";
 import { statusBadgeClass } from "./complianceStatus";
+import { CrossCheck } from "./coiTextParse";
 import DashboardStats from "./components/DashboardStats";
 import NeedsAttention from "./components/NeedsAttention";
 import ProjectForm from "./components/ProjectForm";
@@ -138,6 +139,8 @@ export default function App() {
     professional_liability?: number | null;
     pollution_liability?: number | null;
     unreadable_fields?: string[];
+    /** Result of comparing the AI reading against the PDF text layer. */
+    cross_check?: CrossCheck;
     additional_insured_named?: string[];
     additional_insured_blanket?: boolean;
     additional_insured_text?: string;
@@ -348,6 +351,9 @@ export default function App() {
       // Persisted so the "Needs Review" outcome survives the re-evaluation
       // submitCoiRecord runs from the stored row.
       unreadable_fields_extracted: payloadToSave.unreadable_fields ?? [],
+      // The full cross-check result, so a re-evaluation from the stored row
+      // reaches the same verdict the reviewer saw.
+      cross_check_extracted: payloadToSave.cross_check ?? null,
     });
 
     // 3. Commit override state if chosen

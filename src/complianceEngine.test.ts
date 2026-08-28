@@ -853,3 +853,86 @@ describe("verifyCompliance — unreadable required fields go to review", () => {
     expect(result.status).toBe("Compliant");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Disputed fields (wave 3) — two independent readings that conflict.
+// ---------------------------------------------------------------------------
+
+describe("verifyCompliance — disputed fields go to review", () => {
+  it("returns Needs Review when the two readings disagree", () => {
+    const result = verifyCompliance(
+      makeProject(),
+      makeCoi({ disputed_fields: ["gl_each_occurrence"] }),
+      "Other Trades",
+      NOW
+    );
+    expect(result.status).toBe("Needs Review");
+    expect(hasError(result.errors, "two independent readings disagree")).toBe(true);
+  });
+
+  it("does not assert a shortfall for a value it cannot pin down", () => {
+    // The AI read a figure below the requirement, but the document's own text
+    // says otherwise. We do not know which is right, so we must not claim the
+    // vendor is under-covered.
+    const result = verifyCompliance(
+      makeProject(),
+      makeCoi({ gl_each_occurrence: 100_000, disputed_fields: ["gl_each_occurrence"] }),
+      "Other Trades",
+      NOW
+    );
+    expect(hasError(result.errors, "is less than the required")).toBe(false);
+    expect(result.status).toBe("Needs Review");
+  });
+
+  it("never counts a disputed certificate as compliant", () => {
+    const result = verifyCompliance(
+      makeProject(),
+      makeCoi({ disputed_fields: ["auto_combined_single_limit"] }),
+      "Other Trades",
+      NOW
+    );
+    expect(countsAsCompliant(result.status)).toBe(false);
+  });
+
+  it("ignores a dispute on a field the project does not require", () => {
+    const project = makeProject({ requirements: { umbrella_limit: 0 } });
+    const result = verifyCompliance(
+      project,
+      makeCoi({ disputed_fields: ["umbrella_limit"] }),
+      "Other Trades",
+      NOW
+    );
+    expect(result.status).toBe("Compliant");
+  });
+
+  it("lets a proven shortfall elsewhere outrank a dispute", () => {
+    const result = verifyCompliance(
+      makeProject(),
+      makeCoi({ gl_general_aggregate: 1_000_000, disputed_fields: ["gl_each_occurrence"] }),
+      "Other Trades",
+      NOW
+    );
+    expect(result.status).toBe("Insufficient Coverage");
+  });
+
+  it("prefers the unreadable message when a field is both", () => {
+    // Belt and braces: the two lists should be mutually exclusive in practice
+    // (an unread field produces no second reading to disagree with), but the
+    // outcome must be deterministic if they ever overlap.
+    const result = verifyCompliance(
+      makeProject(),
+      makeCoi({ unreadable_fields: ["gl_each_occurrence"], disputed_fields: ["gl_each_occurrence"] }),
+      "Other Trades",
+      NOW
+    );
+    expect(hasError(result.errors, "could not be read")).toBe(true);
+    expect(hasError(result.errors, "two independent readings disagree")).toBe(false);
+    expect(result.status).toBe("Needs Review");
+  });
+
+  it("leaves a certificate with no disputes exactly as before", () => {
+    const result = verifyCompliance(makeProject(), makeCoi({ disputed_fields: [] }), "Other Trades", NOW);
+    expect(result.status).toBe("Compliant");
+    expect(result.errors).toEqual([]);
+  });
+});

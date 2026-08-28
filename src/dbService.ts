@@ -292,6 +292,7 @@ export async function submitCoiRecord(
       // Without this the readability signal is lost on save and the record
       // silently falls back to "Insufficient Coverage".
       unreadable_fields: coiData.unreadable_fields_extracted ?? [],
+      disputed_fields: coiData.cross_check_extracted?.disputed ?? [],
     },
     trade,
     evalDate,

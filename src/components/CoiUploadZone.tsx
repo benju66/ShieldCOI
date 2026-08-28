@@ -3,6 +3,8 @@ import { Upload, FileText, CheckCircle2, AlertTriangle, RefreshCw } from "lucide
 import { todayISO } from "../settingsService";
 import { useSettings } from "../SettingsContext";
 import { EndorsementFacts } from "../types";
+import { readTextLayerValues } from "../coiTextLayer";
+import { crossCheckFields, CrossCheck } from "../coiTextParse";
 
 interface CoiUploadZoneProps {
   onScanComplete: (data: {
@@ -23,6 +25,8 @@ interface CoiUploadZoneProps {
     professional_liability?: number | null;
     pollution_liability?: number | null;
     unreadable_fields?: string[];
+    /** Result of comparing the AI reading against the PDF text layer. */
+    cross_check?: CrossCheck;
     file_name: string;
     simulated: boolean;
     warning?: string;
@@ -152,6 +156,15 @@ export default function CoiUploadZone({ onScanComplete, onScanStart, customRequi
 
           const responseData = await res.json();
           if (responseData.success) {
+            // Second, independent reading. For a true digital PDF the text layer
+            // can be parsed deterministically and compared against the model's
+            // reading; a disagreement is a question for a human. Photos and
+            // scans have no text layer, so this yields nothing and the result is
+            // honestly reported as single-source.
+            setLoadingText("Cross-checking the extracted values against the document...");
+            const textValues = await readTextLayerValues(base64Bytes, file.type || "");
+            const crossCheck = crossCheckFields(responseData.data ?? {}, textValues);
+
             setLoadingText("Comparing extracted policy limits against project mandates...");
             setTimeout(() => {
               onScanComplete({
@@ -162,6 +175,7 @@ export default function CoiUploadZone({ onScanComplete, onScanStart, customRequi
                 simulated: !!responseData.simulated,
                 warning: responseData.warning,
                 extraction_method: "AI_Scan",
+                cross_check: crossCheck,
               });
               setLoading(false);
             }, 800);
