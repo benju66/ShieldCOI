@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { X, Check, ShieldCheck, ShieldAlert, FileWarning, Eye } from "lucide-react";
+import { X, Check, ShieldCheck, ShieldAlert, FileWarning, Eye, HelpCircle } from "lucide-react";
 import { Project, EndorsementFacts } from "../types";
 import { verifyCompliance, isNamedAdditionalInsured, matchEntityNames } from "../complianceEngine";
 import { formatUSD } from "../utils/currency";
@@ -170,7 +170,42 @@ export default function VerificationDrawer({
   const trade = subContractorTrade || "Other Trades";
   const tradeRules = settings.trade_rules;
   const required = resolveRequiredCoverage(req, trade, tradeRules);
-  const analysis = verifyCompliance(project, activeData, trade, evaluationDate, tradeRules, subContractorName);
+
+  // In manual entry the reviewer authors every value themselves, so nothing is
+  // "unreadable" any more — a human has stated it. Without this a certificate
+  // would stay stuck in Needs Review even after someone keyed the values in.
+  const isManualEntry = activeData.extraction_method === "Manual_Entry";
+  const analysisInput = isManualEntry ? { ...activeData, unreadable_fields: [] } : activeData;
+  const analysis = verifyCompliance(project, analysisInput, trade, evaluationDate, tradeRules, subContractorName);
+
+  // Reviewer-facing readability notes. Reusing the engine's own messages keeps
+  // one source of truth for the field labels.
+  const reviewNotes = analysis.errors.filter((e) => e.includes("could not be read"));
+
+  const unreadableSet = new Set(analysisInput.unreadable_fields ?? []);
+
+  /**
+   * Row styling with a third state. A value we could not read is neither a pass
+   * nor a shortfall, so it must not wear the red "below requirement" treatment —
+   * that is the false claim this wave exists to remove.
+   */
+  const rowClass = (passed: boolean, field?: string) =>
+    field && unreadableSet.has(field)
+      ? "bg-violet-50 border-violet-200 text-violet-950"
+      : passed
+      ? "bg-slate-50 border-slate-200"
+      : "bg-red-50 border-red-200 text-red-950";
+
+  const valueClass = (passed: boolean, field?: string) =>
+    field && unreadableSet.has(field)
+      ? "text-violet-800"
+      : passed
+      ? "text-slate-800"
+      : "text-red-700 font-extrabold";
+
+  /** Never render an unread box as "$0" — that states a limit the certificate does not. */
+  const valueText = (field: string, value: number | null | undefined) =>
+    unreadableSet.has(field) ? "Not readable" : formatUSD(value);
 
   // Insured-name identity: does the certificate's insured fuzzy-match the enrolled
   // vendor? Reuses the same normalization/inclusion logic as the engine advisory.
@@ -231,7 +266,7 @@ export default function VerificationDrawer({
     }
   };
 
-  const isManualMode = activeData.extraction_method === "Manual_Entry";
+  const isManualMode = isManualEntry;
 
   // Document-highlight metadata: map each extracted-field key to pass/fail + a short label
   // so the source-document viewer can color and label the overlay boxes.
@@ -354,6 +389,28 @@ export default function VerificationDrawer({
             </div>
           )}
 
+          {/* Fields the extractor could not read — the reviewer must confirm these
+              against the certificate itself. Deliberately NOT styled as a failure:
+              nothing here says the coverage is short, only that it is unverified. */}
+          {reviewNotes.length > 0 && (
+            <div id="needs-review-banner" className="bg-violet-50 border border-violet-200 text-violet-950 p-3 rounded-lg flex items-start space-x-2 text-xs">
+              <HelpCircle className="h-4 w-4 text-violet-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold block text-violet-900">
+                  {reviewNotes.length === 1 ? "1 value could not be read" : `${reviewNotes.length} values could not be read`}
+                </span>
+                <span className="text-slate-650 font-medium block mb-1.5">
+                  These are shown as $0 below because nothing was extracted — that is not what the certificate says. Check them against the document, then switch to manual entry to record the real figures.
+                </span>
+                <ul className="list-disc list-inside space-y-0.5 text-violet-900 font-medium">
+                  {reviewNotes.map((note) => (
+                    <li key={note}>{note.split(":")[0]}</li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
           {/* Side-by-Side Comparison Grid */}
           <div id="comparison-grid" className="space-y-3">
             <h3 id="comparison-heading" className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">
@@ -419,7 +476,7 @@ export default function VerificationDrawer({
               <div
                 id="match-row-gl-occurrence"
                 className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
-                  isGlOccPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                  rowClass(isGlOccPassed, "gl_each_occurrence")
                 }`}
               >
                 <div className="col-span-5">
@@ -435,8 +492,8 @@ export default function VerificationDrawer({
                       className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
-                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isGlOccPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                      {formatUSD(activeData.gl_each_occurrence)}
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${valueClass(isGlOccPassed, "gl_each_occurrence")}`}>
+                      {valueText("gl_each_occurrence", activeData.gl_each_occurrence)}
                     </p>
                   )}
                 </div>
@@ -458,7 +515,7 @@ export default function VerificationDrawer({
               <div
                 id="match-row-gl-aggregate"
                 className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
-                  isGlAggPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                  rowClass(isGlAggPassed, "gl_general_aggregate")
                 }`}
               >
                 <div className="col-span-5">
@@ -474,8 +531,8 @@ export default function VerificationDrawer({
                       className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
-                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isGlAggPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                      {formatUSD(activeData.gl_general_aggregate)}
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${valueClass(isGlAggPassed, "gl_general_aggregate")}`}>
+                      {valueText("gl_general_aggregate", activeData.gl_general_aggregate)}
                     </p>
                   )}
                 </div>
@@ -497,7 +554,7 @@ export default function VerificationDrawer({
               <div
                 id="match-row-gl-form"
                 className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
-                  isGlFormOk ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                  rowClass(isGlFormOk)
                 }`}
               >
                 <div className="col-span-5">
@@ -519,7 +576,7 @@ export default function VerificationDrawer({
                       <option value="Unknown">Unknown</option>
                     </select>
                   ) : (
-                    <p className={`text-xs font-bold ${isGlFormOk ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                    <p className={`text-xs font-bold ${valueClass(isGlFormOk)}`}>
                       {activeData.gl_form || "Unknown"}
                     </p>
                   )}
@@ -540,7 +597,7 @@ export default function VerificationDrawer({
               <div
                 id="match-row-auto-limit"
                 className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
-                  isAutoPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                  rowClass(isAutoPassed, "auto_combined_single_limit")
                 }`}
               >
                 <div className="col-span-5">
@@ -556,8 +613,8 @@ export default function VerificationDrawer({
                       className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
-                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isAutoPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                      {formatUSD(activeData.auto_combined_single_limit)}
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${valueClass(isAutoPassed, "auto_combined_single_limit")}`}>
+                      {valueText("auto_combined_single_limit", activeData.auto_combined_single_limit)}
                     </p>
                   )}
                 </div>
@@ -579,7 +636,7 @@ export default function VerificationDrawer({
               <div
                 id="match-row-workers-comp"
                 className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
-                  isWcPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                  rowClass(isWcPassed)
                 }`}
               >
                 <div className="col-span-5">
@@ -618,7 +675,7 @@ export default function VerificationDrawer({
               <div
                 id="match-row-expiration"
                 className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
-                  isNotExpired ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                  rowClass(isNotExpired, "policy_expiration_date")
                 }`}
               >
                 <div className="col-span-5">
@@ -634,7 +691,7 @@ export default function VerificationDrawer({
                       className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
-                    <p className={`text-xs font-mono font-bold ${isNotExpired ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
+                    <p className={`text-xs font-mono font-bold ${valueClass(isNotExpired, "policy_expiration_date")}`}>
                       {activeData.policy_expiration_date}
                     </p>
                   )}
@@ -655,7 +712,7 @@ export default function VerificationDrawer({
               <div
                 id="match-row-gl-products-completed"
                 className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
-                  isGlProdPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                  rowClass(isGlProdPassed, "gl_products_completed")
                 }`}
               >
                 <div className="col-span-5">
@@ -671,8 +728,8 @@ export default function VerificationDrawer({
                       className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
-                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isGlProdPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                      {formatUSD(activeData.gl_products_completed)}
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${valueClass(isGlProdPassed, "gl_products_completed")}`}>
+                      {valueText("gl_products_completed", activeData.gl_products_completed)}
                     </p>
                   )}
                 </div>
@@ -694,7 +751,7 @@ export default function VerificationDrawer({
               <div
                 id="match-row-umbrella-limit"
                 className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
-                  isUmbrellaPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                  rowClass(isUmbrellaPassed, "umbrella_limit")
                 }`}
               >
                 <div className="col-span-5">
@@ -711,8 +768,8 @@ export default function VerificationDrawer({
                       className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
-                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isUmbrellaPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                      {formatUSD(activeData.umbrella_limit)}
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${valueClass(isUmbrellaPassed, "umbrella_limit")}`}>
+                      {valueText("umbrella_limit", activeData.umbrella_limit)}
                     </p>
                   )}
                 </div>
@@ -734,7 +791,7 @@ export default function VerificationDrawer({
               <div
                 id="match-row-el-accident"
                 className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
-                  isElAccidentPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                  rowClass(isElAccidentPassed, "employers_liability_accident")
                 }`}
               >
                 <div className="col-span-5">
@@ -750,8 +807,8 @@ export default function VerificationDrawer({
                       className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
-                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isElAccidentPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                      {formatUSD(activeData.employers_liability_accident)}
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${valueClass(isElAccidentPassed, "employers_liability_accident")}`}>
+                      {valueText("employers_liability_accident", activeData.employers_liability_accident)}
                     </p>
                   )}
                 </div>
@@ -773,7 +830,7 @@ export default function VerificationDrawer({
               <div
                 id="match-row-el-disease-person"
                 className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
-                  isElDiseasePersonPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                  rowClass(isElDiseasePersonPassed, "employers_liability_disease_person")
                 }`}
               >
                 <div className="col-span-5">
@@ -789,8 +846,8 @@ export default function VerificationDrawer({
                       className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
-                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isElDiseasePersonPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                      {formatUSD(activeData.employers_liability_disease_person)}
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${valueClass(isElDiseasePersonPassed, "employers_liability_disease_person")}`}>
+                      {valueText("employers_liability_disease_person", activeData.employers_liability_disease_person)}
                     </p>
                   )}
                 </div>
@@ -812,7 +869,7 @@ export default function VerificationDrawer({
               <div
                 id="match-row-el-disease-limit"
                 className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
-                  isElDiseaseLimitPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                  rowClass(isElDiseaseLimitPassed, "employers_liability_disease_limit")
                 }`}
               >
                 <div className="col-span-5">
@@ -828,8 +885,8 @@ export default function VerificationDrawer({
                       className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                     />
                   ) : (
-                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isElDiseaseLimitPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                      {formatUSD(activeData.employers_liability_disease_limit)}
+                    <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${valueClass(isElDiseaseLimitPassed, "employers_liability_disease_limit")}`}>
+                      {valueText("employers_liability_disease_limit", activeData.employers_liability_disease_limit)}
                     </p>
                   )}
                 </div>
@@ -852,7 +909,7 @@ export default function VerificationDrawer({
                 <div
                   id="match-row-professional-liability"
                   className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
-                    isProfessionalPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                    rowClass(isProfessionalPassed, "professional_liability")
                   }`}
                 >
                   <div className="col-span-5">
@@ -869,8 +926,8 @@ export default function VerificationDrawer({
                         className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       />
                     ) : (
-                      <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isProfessionalPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                        {formatUSD(activeData.professional_liability)}
+                      <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${valueClass(isProfessionalPassed, "professional_liability")}`}>
+                        {valueText("professional_liability", activeData.professional_liability)}
                       </p>
                     )}
                   </div>
@@ -894,7 +951,7 @@ export default function VerificationDrawer({
                 <div
                   id="match-row-pollution-liability"
                   className={`grid grid-cols-12 gap-2 items-center p-2.5 rounded border ${
-                    isPollutionPassed ? "bg-slate-50 border-slate-200" : "bg-red-50 border-red-200 text-red-950"
+                    rowClass(isPollutionPassed, "pollution_liability")
                   }`}
                 >
                   <div className="col-span-5">
@@ -911,8 +968,8 @@ export default function VerificationDrawer({
                         className="w-full text-xs font-mono font-bold text-slate-800 bg-white border border-slate-300 rounded px-2 py-1 text-right focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                       />
                     ) : (
-                      <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${isPollutionPassed ? "text-slate-800" : "text-red-700 font-extrabold"}`}>
-                        {formatUSD(activeData.pollution_liability)}
+                      <p className={`text-xs font-mono font-bold tracking-tight tabular-nums ${valueClass(isPollutionPassed, "pollution_liability")}`}>
+                        {valueText("pollution_liability", activeData.pollution_liability)}
                       </p>
                     )}
                   </div>
