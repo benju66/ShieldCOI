@@ -85,6 +85,8 @@ export default function VerificationDrawer({
   const [waiverAuthorizedBy, setWaiverAuthorizedBy] = useState("");
   const [waiverExpirationDate, setWaiverExpirationDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Whole-certificate attestation. Reset per open, like every other control.
+  const [attested, setAttested] = useState(false);
 
   // Maintain local state representing editable payload if Manual Mode is active or during edit
   const [formData, setFormData] = useState<{
@@ -135,6 +137,7 @@ export default function VerificationDrawer({
       setWaiverReasonType("");
       setWaiverAuthorizedBy("");
       setWaiverExpirationDate("");
+      setAttested(false);
 
       setFormData({
         insured_name: extractedData.insured_name || "",
@@ -273,7 +276,7 @@ export default function VerificationDrawer({
         override ? (waiverReasonType || null) : null,
         override ? (waiverAuthorizedBy || null) : null,
         override ? (waiverExpirationDate || null) : null,
-        activeData
+        { ...activeData, reviewed: attested }
       );
       onClose();
     } catch (err: any) {
@@ -1464,6 +1467,23 @@ export default function VerificationDrawer({
             >
               Cancel
             </button>
+            <label
+              htmlFor="reviewer-attestation"
+              className="flex items-start gap-2 mr-auto cursor-pointer select-none max-w-[380px]"
+              title="Records that you checked this certificate against the document. It does not change the compliance result."
+            >
+              <input
+                id="reviewer-attestation"
+                type="checkbox"
+                checked={attested}
+                onChange={(e) => setAttested(e.target.checked)}
+                className="mt-0.5 h-3.5 w-3.5 accent-indigo-600 cursor-pointer"
+              />
+              <span className="text-[11px] text-slate-600 leading-tight">
+                I reviewed this certificate against the document.
+                <span className="block text-[10px] text-slate-450">Recorded with your name — it does not change the compliance result.</span>
+              </span>
+            </label>
             <button
               onClick={handleApplyResolution}
               type="button"

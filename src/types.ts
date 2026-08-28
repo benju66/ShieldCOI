@@ -178,6 +178,14 @@ export interface CoiRecord {
     unverified: string[];
     hadTextLayer: boolean;
   } | null;
+  // Whole-certificate reviewer attestation: a named person confirming they
+  // checked this certificate against the document. Orthogonal to compliance
+  // status — signing off records that a human looked, not that the values pass.
+  // Absent = never signed off. reviewed_by_name is denormalized so history
+  // survives the account being removed.
+  reviewed_by?: string | null;
+  reviewed_by_name?: string | null;
+  reviewed_at?: string | null;
   // Original certificate document in Storage (bucket "coi-documents"). Absent
   // on manual entries, sandbox samples, and records saved before documents
   // were archived (wave 2).

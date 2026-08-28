@@ -293,6 +293,33 @@ export default function CoiHistoryDrawer({
                       </div>
                     </div>
 
+                    {/* Reviewer attestation (wave 3). Stating the negative case
+                        plainly matters most: an unreviewed certificate must not
+                        look the same as one a named person actually checked. */}
+                    <div
+                      className={`rounded-lg p-3 border ${
+                        selectedRecord.reviewed_at ? "bg-emerald-50 border-emerald-200" : "bg-slate-50 border-slate-200"
+                      }`}
+                    >
+                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center mb-1">
+                        <CheckCircle2 className="h-3.5 w-3.5 mr-1 text-slate-500" />
+                        Reviewer sign-off
+                      </h4>
+                      {selectedRecord.reviewed_at ? (
+                        <p className="text-[11px] text-emerald-900 font-medium">
+                          Reviewed by {selectedRecord.reviewed_by_name || "a team member"} on{" "}
+                          {new Date(selectedRecord.reviewed_at).toLocaleDateString()}
+                          <span className="block text-[10px] text-slate-600 font-normal mt-0.5">
+                            Confirms a person checked this certificate against the document — not that the coverage passed.
+                          </span>
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-slate-600 italic">
+                          Not signed off — no one has confirmed these values against the document.
+                        </p>
+                      )}
+                    </div>
+
                     {/* Stored source document (wave 2 — archived original certificate) */}
                     <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
                       <div className="flex items-center justify-between">

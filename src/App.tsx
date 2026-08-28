@@ -357,6 +357,12 @@ export default function App() {
       // reaches the same verdict the reviewer saw.
       cross_check_extracted: payloadToSave.cross_check ?? null,
       policy_lines_extracted: payloadToSave.policy_lines ?? [],
+      // Whole-certificate attestation. Stamped from the signed-in user rather
+      // than anything the client can assert, and the display name is captured
+      // now so history survives the account being removed later.
+      reviewed_by: payloadToSave.reviewed ? user?.id ?? null : null,
+      reviewed_by_name: payloadToSave.reviewed ? displayNameFor(myProfile) || user?.email || null : null,
+      reviewed_at: payloadToSave.reviewed ? new Date().toISOString() : null,
     });
 
     // 3. Commit override state if chosen
