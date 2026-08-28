@@ -218,6 +218,9 @@ function buildSampleCoiData(fileName: string, custom_requirements?: any, additio
       project_aggregate: false,
       completed_ops_ai: true,
     },
+    // Canned fixtures are legible by construction — the sandbox demonstrates the
+    // happy path, so nothing here should ever land in review.
+    unreadable_fields: [],
   };
 }
 
@@ -375,24 +378,30 @@ Differentiate between the Commercial General Liability, Automobile Liability, an
 
 Extract:
 1. "insured_name": Look under 'INSURED' box at the top of the form.
-2. "gl_each_occurrence": General Liability - EACH OCCURRENCE limit ($). Set to 0 if not found.
-3. "gl_general_aggregate": General Liability - GENERAL AGGREGATE limit ($). Set to 0 if not found.
-4. "auto_combined_single_limit": AUTOMOBILE LIABILITY - COMBINED SINGLE LIMIT (each accident) ($). Set to 0 if not found.
+2. "gl_each_occurrence": General Liability - EACH OCCURRENCE limit ($). Return null if that box is blank or the coverage is not on the certificate.
+3. "gl_general_aggregate": General Liability - GENERAL AGGREGATE limit ($). Return null if that box is blank or the coverage is not on the certificate.
+4. "auto_combined_single_limit": AUTOMOBILE LIABILITY - COMBINED SINGLE LIMIT (each accident) ($). Return null if that box is blank or the coverage is not on the certificate.
 5. "workers_comp_statutory": WORKERS COMPENSATION - are limits statutory (usually marked as WC EXEMPT or checkboxes Yes/No)? Set to true if STATUTORY is checked or indicated, else false.
 6. "policy_expiration_date": Look for the General Liability, Automobile, or main policy EXPIRATION DATE. Format as 'YYYY-MM-DD'.
-7. "gl_products_completed": PRODUCTS - COMP/OP AGG limit ($). Set to 0 if not found.
-8. "umbrella_limit": UMBRELLA/EXCESS EACH OCCURRENCE limit ($). Set to 0 if not found.
-9. "employers_liability_accident": Employers' Liability: E.L. EACH ACCIDENT limit ($). Set to 0 if not found.
-10. "employers_liability_disease_person": Employers' Liability: E.L. DISEASE - EA EMPLOYEE limit ($). Set to 0 if not found.
-11. "employers_liability_disease_limit": Employers' Liability: E.L. DISEASE - POLICY LIMIT ($). Set to 0 if not found.
-12. "professional_liability": Professional Liability (usually under other/additional lines) ($). Set to 0 if not found.
-13. "pollution_liability": Pollution Liability (usually under other/additional lines or endorsements) ($). Set to 0 if not found.
+7. "gl_products_completed": PRODUCTS - COMP/OP AGG limit ($). Return null if that box is blank or the coverage is not on the certificate.
+8. "umbrella_limit": UMBRELLA/EXCESS EACH OCCURRENCE limit ($). Return null if that box is blank or the coverage is not on the certificate.
+9. "employers_liability_accident": Employers' Liability: E.L. EACH ACCIDENT limit ($). Return null if that box is blank or the coverage is not on the certificate.
+10. "employers_liability_disease_person": Employers' Liability: E.L. DISEASE - EA EMPLOYEE limit ($). Return null if that box is blank or the coverage is not on the certificate.
+11. "employers_liability_disease_limit": Employers' Liability: E.L. DISEASE - POLICY LIMIT ($). Return null if that box is blank or the coverage is not on the certificate.
+12. "professional_liability": Professional Liability (usually under other/additional lines) ($). Return null if that box is blank or the coverage is not on the certificate.
+13. "pollution_liability": Pollution Liability (usually under other/additional lines or endorsements) ($). Return null if that box is blank or the coverage is not on the certificate.
 14. "additional_insured_named": An array of the exact company/entity names listed as Additional Insured on the certificate — look in the "DESCRIPTION OF OPERATIONS / LOCATIONS / VEHICLES" box and any coverage row where the "ADDL INSD" column is checked. Return [] if none are named.
 15. "additional_insured_blanket": true if the certificate uses BLANKET additional insured language such as "as required by written contract", "where required by written contract", "per blanket endorsement", or references blanket endorsement forms (e.g. CG 20 33, CG 20 38). Otherwise false.
 16. "additional_insured_text": The exact additional-insured wording copied from the Description of Operations box (empty string if none).
 17. "gl_addl_insd": true if the "ADDL INSD" column is checked / marked "Y" on the General Liability (Commercial General Liability) row.
 18. "gl_form": Which basis is the Commercial General Liability written on? Read the FORM checkboxes in the CGL section — "OCCUR" vs "CLAIMS-MADE". Return exactly "Occurrence", "Claims-Made", or "Unknown" if it cannot be determined.
 19. "endorsement_facts": An object of booleans. Set each true only if the certificate clearly indicates it (a checkbox / "Y", or explicit wording in the Description of Operations box), otherwise false: "waiver_of_subrogation" (a Waiver of Subrogation in favor of others, e.g. CG 24 04), "primary_noncontributory" (coverage stated to be Primary and Non-Contributory, e.g. CG 20 01), "project_aggregate" (a dedicated per-project General Aggregate applies, e.g. CG 25 03/04), "completed_ops_ai" (Additional Insured for COMPLETED operations / products-completed operations, e.g. CG 20 37).${customPromptText}${aiPromptText}
+
+CRITICAL — distinguish "not there" from "cannot read it":
+- A value is ABSENT when the box is genuinely blank, struck through, or that coverage line is simply not on this certificate. Return null and do NOT list the field in "unreadable_fields". Absent coverage is a real answer.
+- A value is UNREADABLE when it plausibly IS on the certificate but you cannot state it with confidence — the scan is blurry, the box is cut off or obscured, digits are ambiguous, or two candidate values conflict. Return null AND list the exact field name in "unreadable_fields".
+- Never guess a number to avoid saying you could not read it, and never report 0 to mean "missing". 0 means the certificate states a limit of zero.
+"unreadable_fields": An array of the exact field names above that you could not read confidently. Return [] when the whole certificate was legible.
 
 Strictly return ONLY the requested JSON schema.`;
 
@@ -405,19 +414,28 @@ Strictly return ONLY the requested JSON schema.`;
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            insured_name: { type: Type.STRING },
-            gl_each_occurrence: { type: Type.NUMBER },
-            gl_general_aggregate: { type: Type.NUMBER },
-            auto_combined_single_limit: { type: Type.NUMBER },
+            // Numeric limits are nullable: null means "not stated on this
+            // certificate" OR "could not be read" — unreadable_fields below is
+            // what separates the two. 0 is reserved for a stated zero limit.
+            insured_name: { type: Type.STRING, nullable: true },
+            gl_each_occurrence: { type: Type.NUMBER, nullable: true },
+            gl_general_aggregate: { type: Type.NUMBER, nullable: true },
+            auto_combined_single_limit: { type: Type.NUMBER, nullable: true },
             workers_comp_statutory: { type: Type.BOOLEAN },
-            policy_expiration_date: { type: Type.STRING, description: "YYYY-MM-DD form" },
-            gl_products_completed: { type: Type.NUMBER },
-            umbrella_limit: { type: Type.NUMBER },
-            employers_liability_accident: { type: Type.NUMBER },
-            employers_liability_disease_person: { type: Type.NUMBER },
-            employers_liability_disease_limit: { type: Type.NUMBER },
-            professional_liability: { type: Type.NUMBER },
-            pollution_liability: { type: Type.NUMBER },
+            policy_expiration_date: { type: Type.STRING, description: "YYYY-MM-DD form", nullable: true },
+            gl_products_completed: { type: Type.NUMBER, nullable: true },
+            umbrella_limit: { type: Type.NUMBER, nullable: true },
+            employers_liability_accident: { type: Type.NUMBER, nullable: true },
+            employers_liability_disease_person: { type: Type.NUMBER, nullable: true },
+            employers_liability_disease_limit: { type: Type.NUMBER, nullable: true },
+            professional_liability: { type: Type.NUMBER, nullable: true },
+            pollution_liability: { type: Type.NUMBER, nullable: true },
+            unreadable_fields: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description:
+                "Exact field names that are plausibly present on the certificate but could not be read confidently. Empty when everything legible.",
+            },
             additional_insured_named: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Entities explicitly named as Additional Insured on the certificate." },
             additional_insured_blanket: { type: Type.BOOLEAN, description: "True if blanket 'as required by written contract' additional insured language is present." },
             additional_insured_text: { type: Type.STRING, description: "Raw additional insured wording from the Description of Operations box." },
@@ -459,6 +477,7 @@ Strictly return ONLY the requested JSON schema.`;
             "gl_addl_insd",
             "gl_form",
             "endorsement_facts",
+            "unreadable_fields",
           ],
         },
       },
@@ -467,7 +486,7 @@ Strictly return ONLY the requested JSON schema.`;
     const textResponse = response.text;
     if (!textResponse) throw new Error("Empty response from the extraction model.");
     console.log("Raw Gemini Output:", textResponse);
-    const parsedData = JSON.parse(textResponse.trim());
+    const parsedData = normalizeReadability(JSON.parse(textResponse.trim()));
     return { status: 200, body: { success: true, data: parsedData, simulated: false } };
   } catch (extractionError: any) {
     // FAIL CLOSED — surface the failure instead of inventing certificate values.
@@ -481,6 +500,61 @@ Strictly return ONLY the requested JSON schema.`;
       },
     };
   }
+}
+
+/**
+ * Fields whose readability we track. Anything the model names outside this set
+ * is discarded — an unreadable list is only useful if a reviewer can act on it.
+ */
+export const READABILITY_TRACKED_FIELDS = [
+  "insured_name",
+  "gl_each_occurrence",
+  "gl_general_aggregate",
+  "auto_combined_single_limit",
+  "policy_expiration_date",
+  "gl_products_completed",
+  "umbrella_limit",
+  "employers_liability_accident",
+  "employers_liability_disease_person",
+  "employers_liability_disease_limit",
+  "professional_liability",
+  "pollution_liability",
+] as const;
+
+/**
+ * Reconcile the model's "I couldn't read these" list with the values it
+ * actually returned. Two rules, both fail-safe:
+ *
+ *  - A field it DID return a value for is readable by definition; drop it from
+ *    the list so a stray name cannot send a perfectly good certificate to
+ *    review.
+ *  - Unknown field names are dropped — a reviewer can only act on fields the
+ *    app actually shows.
+ *
+ * Exported for tests.
+ */
+export function normalizeReadability(data: any): any {
+  if (!data || typeof data !== "object") return data;
+  const tracked = new Set<string>(READABILITY_TRACKED_FIELDS);
+  const claimed: unknown[] = Array.isArray(data.unreadable_fields) ? data.unreadable_fields : [];
+
+  const hasValue = (field: string) => {
+    const v = data[field];
+    if (v === null || v === undefined) return false;
+    // A blank string is no more readable than a missing one.
+    return typeof v === "string" ? v.trim() !== "" : true;
+  };
+
+  const unreadable = Array.from(
+    new Set(
+      claimed
+        .filter((f): f is string => typeof f === "string")
+        .map((f) => f.trim())
+        .filter((f) => tracked.has(f) && !hasValue(f))
+    )
+  );
+
+  return { ...data, unreadable_fields: unreadable };
 }
 
 /** Parse a newline + pipe-delimited trade table into structured rows. */

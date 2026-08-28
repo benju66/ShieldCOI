@@ -5,6 +5,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    // api/ is included so the extraction helpers — which decide whether a
+    // certificate goes to manual review — are covered too.
+    include: ["src/**/*.test.ts", "api/**/*.test.ts"],
   },
 });

@@ -122,19 +122,22 @@ export default function App() {
   const [isScanningActive, setIsScanningActive] = useState(false);
   const [view, setView] = useState<"home" | "projects" | "vendors">("home");
   const [scannedPayload, setScannedPayload] = useState<{
-    insured_name: string;
-    gl_each_occurrence: number;
-    gl_general_aggregate: number;
-    auto_combined_single_limit: number;
+    // Nullable since the extraction overhaul: null means the value is absent
+    // from the certificate or could not be read. See unreadable_fields.
+    insured_name: string | null;
+    gl_each_occurrence: number | null;
+    gl_general_aggregate: number | null;
+    auto_combined_single_limit: number | null;
     workers_comp_statutory: boolean;
-    policy_expiration_date: string;
-    gl_products_completed?: number;
-    umbrella_limit?: number;
-    employers_liability_accident?: number;
-    employers_liability_disease_person?: number;
-    employers_liability_disease_limit?: number;
-    professional_liability?: number;
-    pollution_liability?: number;
+    policy_expiration_date: string | null;
+    gl_products_completed?: number | null;
+    umbrella_limit?: number | null;
+    employers_liability_accident?: number | null;
+    employers_liability_disease_person?: number | null;
+    employers_liability_disease_limit?: number | null;
+    professional_liability?: number | null;
+    pollution_liability?: number | null;
+    unreadable_fields?: string[];
     additional_insured_named?: string[];
     additional_insured_blanket?: boolean;
     additional_insured_text?: string;
