@@ -221,6 +221,10 @@ function buildSampleCoiData(fileName: string, custom_requirements?: any, additio
     // Canned fixtures are legible by construction — the sandbox demonstrates the
     // happy path, so nothing here should ever land in review.
     unreadable_fields: [],
+    policy_lines: [
+      { line: "General Liability", policy_number: "GL-SANDBOX-001", effective: null, expiration: expireDate },
+      { line: "Automobile", policy_number: "CA-SANDBOX-001", effective: null, expiration: expireDate },
+    ],
   };
 }
 
@@ -382,7 +386,8 @@ Extract:
 3. "gl_general_aggregate": General Liability - GENERAL AGGREGATE limit ($). Return null if that box is blank or the coverage is not on the certificate.
 4. "auto_combined_single_limit": AUTOMOBILE LIABILITY - COMBINED SINGLE LIMIT (each accident) ($). Return null if that box is blank or the coverage is not on the certificate.
 5. "workers_comp_statutory": WORKERS COMPENSATION - are limits statutory (usually marked as WC EXEMPT or checkboxes Yes/No)? Set to true if STATUTORY is checked or indicated, else false.
-6. "policy_expiration_date": Look for the General Liability, Automobile, or main policy EXPIRATION DATE. Format as 'YYYY-MM-DD'.
+6. "policy_expiration_date": The EXPIRATION DATE governing this certificate. Format as 'YYYY-MM-DD'.
+6b. "policy_lines": One entry per coverage row that carries its own policy dates. Each ACORD 25 row has its OWN POLICY EFF and POLICY EXP dates and they frequently differ — read each row separately rather than assuming they match. For each: "line" (exactly one of "General Liability", "Automobile", "Umbrella", "Workers Compensation", "Other"), "policy_number" (as printed, or null), "effective" and "expiration" ('YYYY-MM-DD', or null if that row's date is blank or unreadable). Return [] if the rows carry no dates at all.
 7. "gl_products_completed": PRODUCTS - COMP/OP AGG limit ($). Return null if that box is blank or the coverage is not on the certificate.
 8. "umbrella_limit": UMBRELLA/EXCESS EACH OCCURRENCE limit ($). Return null if that box is blank or the coverage is not on the certificate.
 9. "employers_liability_accident": Employers' Liability: E.L. EACH ACCIDENT limit ($). Return null if that box is blank or the coverage is not on the certificate.
@@ -430,6 +435,20 @@ Strictly return ONLY the requested JSON schema.`;
             employers_liability_disease_limit: { type: Type.NUMBER, nullable: true },
             professional_liability: { type: Type.NUMBER, nullable: true },
             pollution_liability: { type: Type.NUMBER, nullable: true },
+            policy_lines: {
+              type: Type.ARRAY,
+              description:
+                "Per-coverage-row policy dates. Each ACORD 25 row carries its own POLICY EFF / POLICY EXP, and they often differ.",
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  line: { type: Type.STRING, description: "General Liability | Automobile | Umbrella | Workers Compensation | Other" },
+                  policy_number: { type: Type.STRING, nullable: true },
+                  effective: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
+                  expiration: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
+                },
+              },
+            },
             unreadable_fields: {
               type: Type.ARRAY,
               items: { type: Type.STRING },
@@ -478,6 +497,7 @@ Strictly return ONLY the requested JSON schema.`;
             "gl_form",
             "endorsement_facts",
             "unreadable_fields",
+            "policy_lines",
           ],
         },
       },
@@ -486,7 +506,7 @@ Strictly return ONLY the requested JSON schema.`;
     const textResponse = response.text;
     if (!textResponse) throw new Error("Empty response from the extraction model.");
     console.log("Raw Gemini Output:", textResponse);
-    const parsedData = normalizeReadability(JSON.parse(textResponse.trim()));
+    const parsedData = resolveGoverningExpiration(normalizeReadability(JSON.parse(textResponse.trim())));
     return { status: 200, body: { success: true, data: parsedData, simulated: false } };
   } catch (extractionError: any) {
     // FAIL CLOSED — surface the failure instead of inventing certificate values.
@@ -555,6 +575,51 @@ export function normalizeReadability(data: any): any {
   );
 
   return { ...data, unreadable_fields: unreadable };
+}
+
+/**
+ * Coverage rows whose expiration can govern the certificate.
+ *
+ * "Other" rows are excluded deliberately: an ACORD 25 often carries an unrelated
+ * line (installation floater, leased equipment, a bond) with its own short date.
+ * Letting one of those govern would report a vendor as Expired while every
+ * coverage the project actually requires is still in force — over-flagging that
+ * would train reviewers to distrust the status.
+ */
+const GOVERNING_POLICY_LINES = new Set([
+  "General Liability",
+  "Automobile",
+  "Umbrella",
+  "Workers Compensation",
+]);
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Each ACORD 25 row carries its own POLICY EXP, and they routinely differ. The
+ * certificate is only good until the FIRST required coverage lapses, so the
+ * earliest governing expiration is the one compliance runs against.
+ *
+ * Falls back to whatever the model reported as the overall date when no usable
+ * line dates were read — never widens the window on a guess.
+ *
+ * Exported for tests.
+ */
+export function resolveGoverningExpiration(data: any): any {
+  if (!data || typeof data !== "object") return data;
+  const lines = Array.isArray(data.policy_lines) ? data.policy_lines : [];
+
+  const governing = lines
+    .filter((l: any) => l && GOVERNING_POLICY_LINES.has(String(l.line || "").trim()))
+    .map((l: any) => String(l.expiration || "").trim())
+    .filter((d: string) => ISO_DATE.test(d) && !isNaN(new Date(d).getTime()))
+    .sort();
+
+  return {
+    ...data,
+    policy_lines: lines,
+    policy_expiration_date: governing.length > 0 ? governing[0] : data.policy_expiration_date ?? null,
+  };
 }
 
 /** Parse a newline + pipe-delimited trade table into structured rows. */

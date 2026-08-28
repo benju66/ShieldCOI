@@ -118,6 +118,14 @@ export interface Subcontractor {
   contact_name?: string | null;
 }
 
+/** One coverage row's policy period, as printed on the ACORD 25. */
+export interface PolicyLine {
+  line: string; // General Liability | Automobile | Umbrella | Workers Compensation | Other
+  policy_number?: string | null;
+  effective?: string | null; // YYYY-MM-DD
+  expiration?: string | null; // YYYY-MM-DD
+}
+
 export interface CoiRecord {
   id: string;
   subcontractor_id: string;
@@ -160,6 +168,10 @@ export interface CoiRecord {
   // sources confirmed, which they disagree on, and whether a second reading was
   // possible at all. Null on manual entries, sandbox samples, images/scans with
   // no text layer, and records written before wave 3.
+  // Per-coverage policy periods. Compliance runs against the earliest expiration
+  // among the required coverages (GL/Auto/Umbrella/WC) — a certificate is only
+  // good until the first required coverage lapses.
+  policy_lines_extracted?: PolicyLine[] | null;
   cross_check_extracted?: {
     agreed: string[];
     disputed: string[];

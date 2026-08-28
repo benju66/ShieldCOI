@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeReadability, READABILITY_TRACKED_FIELDS } from "./_scan";
+import { normalizeReadability, READABILITY_TRACKED_FIELDS, resolveGoverningExpiration } from "./_scan";
 
 /**
  * normalizeReadability decides which certificates land in front of a human, so
@@ -89,5 +89,79 @@ describe("normalizeReadability", () => {
     expect(READABILITY_TRACKED_FIELDS).toContain("policy_expiration_date");
     expect(READABILITY_TRACKED_FIELDS).toContain("insured_name");
     expect(new Set(READABILITY_TRACKED_FIELDS).size).toBe(READABILITY_TRACKED_FIELDS.length);
+  });
+});
+
+/**
+ * Each ACORD 25 row carries its own POLICY EXP and they routinely differ. A
+ * certificate is only good until the first REQUIRED coverage lapses.
+ */
+describe("resolveGoverningExpiration", () => {
+  const lines = (...rows: any[]) => ({ policy_expiration_date: "2027-12-31", policy_lines: rows });
+
+  it("governs by the earliest required coverage, not the headline date", () => {
+    const out = resolveGoverningExpiration(
+      lines(
+        { line: "General Liability", expiration: "2027-06-01" },
+        { line: "Automobile", expiration: "2026-09-15" },
+        { line: "Workers Compensation", expiration: "2027-01-20" }
+      )
+    );
+    expect(out.policy_expiration_date).toBe("2026-09-15");
+  });
+
+  it("ignores an unrelated 'Other' line", () => {
+    // An installation floater or leased-equipment row with a short date must not
+    // report the vendor as Expired while every required coverage is in force.
+    const out = resolveGoverningExpiration(
+      lines(
+        { line: "General Liability", expiration: "2027-06-01" },
+        { line: "Other", expiration: "2026-01-01" }
+      )
+    );
+    expect(out.policy_expiration_date).toBe("2027-06-01");
+  });
+
+  it("skips rows with a blank or unreadable date", () => {
+    const out = resolveGoverningExpiration(
+      lines(
+        { line: "General Liability", expiration: null },
+        { line: "Automobile", expiration: "not-a-date" },
+        { line: "Umbrella", expiration: "2026-11-30" }
+      )
+    );
+    expect(out.policy_expiration_date).toBe("2026-11-30");
+  });
+
+  it("falls back to the reported date when no line dates are usable", () => {
+    // Never widen the coverage window on a guess — keep what was reported and
+    // let the engine's own fail-closed date handling take over.
+    const out = resolveGoverningExpiration(lines({ line: "Other", expiration: "2026-01-01" }));
+    expect(out.policy_expiration_date).toBe("2027-12-31");
+  });
+
+  it("keeps the reported date when there are no lines at all", () => {
+    const out = resolveGoverningExpiration({ policy_expiration_date: "2027-03-03", policy_lines: [] });
+    expect(out.policy_expiration_date).toBe("2027-03-03");
+  });
+
+  it("normalizes a missing policy_lines to an array", () => {
+    const out = resolveGoverningExpiration({ policy_expiration_date: "2027-03-03" });
+    expect(out.policy_lines).toEqual([]);
+  });
+
+  it("preserves every other extracted value", () => {
+    const out = resolveGoverningExpiration({
+      gl_each_occurrence: 1_000_000,
+      unreadable_fields: ["umbrella_limit"],
+      policy_expiration_date: "2027-01-01",
+      policy_lines: [{ line: "General Liability", expiration: "2026-06-06" }],
+    });
+    expect(out.gl_each_occurrence).toBe(1_000_000);
+    expect(out.unreadable_fields).toEqual(["umbrella_limit"]);
+  });
+
+  it("passes through non-object input unchanged", () => {
+    expect(resolveGoverningExpiration(null)).toBeNull();
   });
 });

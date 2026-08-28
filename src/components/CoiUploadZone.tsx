@@ -2,7 +2,7 @@ import React, { useState, useRef } from "react";
 import { Upload, FileText, CheckCircle2, AlertTriangle, RefreshCw } from "lucide-react";
 import { todayISO } from "../settingsService";
 import { useSettings } from "../SettingsContext";
-import { EndorsementFacts } from "../types";
+import { EndorsementFacts, PolicyLine } from "../types";
 import { readTextLayerValues } from "../coiTextLayer";
 import { crossCheckFields, CrossCheck } from "../coiTextParse";
 
@@ -27,6 +27,8 @@ interface CoiUploadZoneProps {
     unreadable_fields?: string[];
     /** Result of comparing the AI reading against the PDF text layer. */
     cross_check?: CrossCheck;
+    /** Per-coverage policy periods; the earliest required expiration governs. */
+    policy_lines?: PolicyLine[];
     file_name: string;
     simulated: boolean;
     warning?: string;

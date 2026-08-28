@@ -50,7 +50,7 @@ import {
   getCoiRecords
 } from "./dbService";
 
-import { Project, Subcontractor, Notification, CoiRecord, EndorsementFacts } from "./types";
+import { Project, Subcontractor, Notification, CoiRecord, EndorsementFacts, PolicyLine } from "./types";
 import { uploadCoiDocument } from "./storageService";
 import { statusBadgeClass } from "./complianceStatus";
 import { CrossCheck } from "./coiTextParse";
@@ -141,6 +141,8 @@ export default function App() {
     unreadable_fields?: string[];
     /** Result of comparing the AI reading against the PDF text layer. */
     cross_check?: CrossCheck;
+    /** Per-coverage policy periods; the earliest required expiration governs. */
+    policy_lines?: PolicyLine[];
     additional_insured_named?: string[];
     additional_insured_blanket?: boolean;
     additional_insured_text?: string;
@@ -354,6 +356,7 @@ export default function App() {
       // The full cross-check result, so a re-evaluation from the stored row
       // reaches the same verdict the reviewer saw.
       cross_check_extracted: payloadToSave.cross_check ?? null,
+      policy_lines_extracted: payloadToSave.policy_lines ?? [],
     });
 
     // 3. Commit override state if chosen

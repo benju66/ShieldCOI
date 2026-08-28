@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { X, Check, ShieldCheck, ShieldAlert, FileWarning, Eye, HelpCircle } from "lucide-react";
-import { Project, EndorsementFacts } from "../types";
+import { Project, EndorsementFacts, PolicyLine } from "../types";
 import { verifyCompliance, isNamedAdditionalInsured, matchEntityNames, isReviewNote } from "../complianceEngine";
 import { CrossCheck } from "../coiTextParse";
 import { formatUSD } from "../utils/currency";
@@ -37,6 +37,8 @@ interface VerificationDrawerProps {
     unreadable_fields?: string[];
     /** Comparison of the AI reading against the PDF text layer. */
     cross_check?: CrossCheck;
+    /** Per-coverage policy periods; the earliest required expiration governs. */
+    policy_lines?: PolicyLine[];
     file_name: string;
     simulated: boolean;
     warning?: string;
@@ -107,6 +109,8 @@ export default function VerificationDrawer({
     unreadable_fields?: string[];
     /** Comparison of the AI reading against the PDF text layer. */
     cross_check?: CrossCheck;
+    /** Per-coverage policy periods; the earliest required expiration governs. */
+    policy_lines?: PolicyLine[];
     file_name: string;
     simulated: boolean;
     warning?: string;
@@ -148,6 +152,7 @@ export default function VerificationDrawer({
         pollution_liability: extractedData.pollution_liability || 0,
         unreadable_fields: extractedData.unreadable_fields || [],
         cross_check: extractedData.cross_check,
+        policy_lines: extractedData.policy_lines || [],
         file_name: extractedData.file_name || "",
         simulated: !!extractedData.simulated,
         warning: extractedData.warning,
@@ -463,6 +468,46 @@ export default function VerificationDrawer({
                   </>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Per-coverage policy periods. A single expiration date with no
+              explanation of where it came from is exactly the opacity this wave
+              is removing: show every row, and mark the one that governs. */}
+          {(activeData.policy_lines?.length ?? 0) > 0 && (
+            <div id="policy-periods" className="bg-white border border-slate-200 rounded-lg p-3">
+              <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Policy periods
+              </h4>
+              <div className="space-y-1">
+                {activeData.policy_lines!.map((pl, i) => {
+                  const governs = !!pl.expiration && pl.expiration === activeData.policy_expiration_date;
+                  return (
+                    <div
+                      key={`${pl.line}-${i}`}
+                      className={`flex items-center justify-between text-[11px] px-2 py-1 rounded border ${
+                        governs ? "bg-amber-50 border-amber-200" : "bg-slate-50 border-slate-200"
+                      }`}
+                    >
+                      <span className="font-semibold text-slate-800">
+                        {pl.line}
+                        {pl.policy_number && <span className="ml-1.5 font-mono text-[10px] text-slate-500">{pl.policy_number}</span>}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <span className="font-mono tabular-nums text-slate-700">{pl.expiration || "—"}</span>
+                        {governs && (
+                          <span className="text-[9px] font-bold uppercase tracking-wide text-amber-800" title="Earliest required coverage to lapse — compliance is evaluated against this date">
+                            Governs
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-slate-500 mt-2">
+                Coverage rows expire independently. Compliance runs against the earliest required coverage to lapse; unrelated &ldquo;Other&rdquo; rows are excluded.
+              </p>
             </div>
           )}
 
