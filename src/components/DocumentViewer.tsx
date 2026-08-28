@@ -5,14 +5,13 @@ import { RefreshCw, FileWarning, ZoomIn, ZoomOut, Maximize } from "lucide-react"
 // Express-middleware server and the Vercel static build.
 import PdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
 
-// A bounding box for one extracted field, so the matrix can be tied back to the
-// document. Coordinates follow Gemini's convention: [ymin, xmin, ymax, xmax]
-// normalized to 0–1000, relative to the given (1-based) page.
-export interface FieldLocation {
-  field: string;
-  page?: number;
-  box_2d: number[]; // [ymin, xmin, ymax, xmax]
-}
+// The text-layer parser and the FieldLocation shape live in coiTextParse.ts —
+// they are also the second source for the extraction cross-check, so they are
+// shared rather than owned by this component. Re-exported for existing importers.
+import type { FieldLocation } from "../coiTextParse";
+import { deriveLocationsFromText } from "../coiTextParse";
+export type { FieldLocation };
+export { deriveLocationsFromText };
 
 // Deterministic field positions for the standard ACORD 25 (2016/03) layout, normalized
 // 0–1000 as [ymin, xmin, ymax, xmax] on page 1. The form is standardized, so these land
@@ -90,92 +89,6 @@ const isValidBox = (l: FieldLocation) =>
 function pageOf(l: FieldLocation): number {
   const p = Math.round(Number(l.page));
   return Number.isFinite(p) && p >= 1 && p <= 50 ? p : 1;
-}
-
-// --- Text-layer field snapping -------------------------------------------------
-// ACORD 25 is a standardized form: the coverage labels ("EACH OCCURRENCE", etc.)
-// are fixed text, and each value sits on the same row in the LIMITS column. We anchor
-// on those labels and snap the highlight onto the actual value text — exact per cert,
-// regardless of insurer. `items` are pdf.js text items; `vp` is the scale-1 viewport.
-function boxOf(it: any, vp: { width: number; height: number }): number[] {
-  const e = it.transform[4];
-  const f = it.transform[5];
-  const w = it.width || 0;
-  const h = it.height || Math.hypot(it.transform[2] || 0, it.transform[3] || 0) || 8;
-  return [
-    ((vp.height - (f + h)) / vp.height) * 1000, // ymin (top)
-    (e / vp.width) * 1000, // xmin
-    ((vp.height - f) / vp.height) * 1000, // ymax (bottom)
-    ((e + w) / vp.width) * 1000, // xmax
-  ];
-}
-const padBox = (b: number[], dy: number, dx: number): number[] => [
-  Math.max(0, b[0] - dy),
-  Math.max(0, b[1] - dx),
-  Math.min(1000, b[2] + dy),
-  Math.min(1000, b[3] + dx),
-];
-
-export function deriveLocationsFromText(items: any[], vp: { width: number; height: number }, page: number): FieldLocation[] {
-  const norm = items
-    .filter((it) => it && Array.isArray(it.transform) && (it.str || "").trim())
-    .map((it) => ({
-      str: (it.str as string).trim(),
-      x: (it.transform[4] / vp.width) * 1000,
-      y: ((vp.height - it.transform[5]) / vp.height) * 1000,
-      box: boxOf(it, vp),
-    }));
-  const isMoney = (s: string) => /^\$?\s*\d{1,3}(,\d{3})+(\.\d+)?$/.test(s);
-  const money = norm.filter((o) => isMoney(o.str));
-  const labels = (re: RegExp) => norm.filter((o) => re.test(o.str)).sort((a, b) => a.y - b.y);
-  const valueRightOf = (lab: { x: number; y: number }, tol = 12) =>
-    money.filter((m) => Math.abs(m.y - lab.y) < tol && m.x > lab.x).sort((a, b) => a.x - b.x)[0];
-
-  const out: FieldLocation[] = [];
-  const push = (field: string, box?: number[]) => {
-    if (box) out.push({ field, page, box_2d: padBox(box, 3, 4) });
-  };
-
-  // "EACH OCCURRENCE" appears twice: GL (upper) and Umbrella (lower).
-  const eaOcc = labels(/^each occurrence$/i);
-  if (eaOcc[0]) push("gl_each_occurrence", valueRightOf(eaOcc[0])?.box);
-  if (eaOcc[1]) push("umbrella_limit", valueRightOf(eaOcc[1])?.box);
-
-  const simple: [string, RegExp][] = [
-    ["gl_general_aggregate", /^general aggregate$/i],
-    ["gl_products_completed", /products\s*-?\s*comp/i],
-    ["auto_combined_single_limit", /combined single limit/i],
-    ["employers_liability_accident", /e\.?l\.?\s*each accident/i],
-    ["employers_liability_disease_person", /e\.?l\.?\s*disease\s*-?\s*ea employee/i],
-    ["employers_liability_disease_limit", /e\.?l\.?\s*disease\s*-?\s*policy limit/i],
-  ];
-  for (const [field, re] of simple) {
-    const lab = labels(re)[0];
-    if (lab) push(field, valueRightOf(lab)?.box);
-  }
-
-  // INSURED name: box the block just below the standalone "INSURED" label (left column).
-  const insuredLab = norm.filter((o) => /^insured$/i.test(o.str) && o.x < 250).sort((a, b) => a.y - b.y)[0];
-  if (insuredLab) {
-    out.push({ field: "insured_name", page, box_2d: [insuredLab.y + 8, Math.max(2, insuredLab.x - 4), Math.min(1000, insuredLab.y + 62), 480] });
-  }
-
-  // Policy expiration: date in the POLICY EXP column on the GL row.
-  const polExp = labels(/policy\s*exp/i)[0];
-  if (polExp && eaOcc[0]) {
-    const glY = eaOcc[0].y;
-    const dateItem = norm
-      .filter((o) => /\d{1,2}\/\d{1,2}\/\d{2,4}/.test(o.str) && Math.abs(o.y - glY) < 14 && Math.abs(o.x - polExp.x) < 90)
-      .sort((a, b) => Math.abs(a.x - polExp.x) - Math.abs(b.x - polExp.x))[0];
-    if (dateItem) push("policy_expiration_date", dateItem.box);
-    else out.push({ field: "policy_expiration_date", page, box_2d: [glY - 8, Math.max(0, polExp.x - 6), glY + 12, polExp.x + 84] });
-  }
-
-  // Additional insured: the DESCRIPTION OF OPERATIONS block.
-  const desc = labels(/description of operations\s*\/\s*locations/i)[0];
-  if (desc) out.push({ field: "additional_insured", page, box_2d: [Math.min(985, desc.y + 14), 20, Math.min(998, desc.y + 120), 980] });
-
-  return out;
 }
 
 export default function DocumentViewer({ fileData, fileMime, locations = [], fieldStatus = {}, fieldLabels = {} }: DocumentViewerProps) {
