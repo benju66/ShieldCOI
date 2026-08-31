@@ -5,6 +5,7 @@ import {
   buildCompanyStandardTrades,
   DESIGN_BUILD_TRADES,
   DESIGN_BUILD_SUFFIX,
+  ADDITIONAL_TRADES,
 } from "./companyStandard";
 import { resolveRequiredCoverage } from "./tradeRules";
 import { DEFAULT_TRADES } from "./settingsService";
@@ -94,6 +95,9 @@ describe("company standard — professional liability is design/build only", () 
 describe("company standard — pollution liability by scope (Exhibit D section B.5)", () => {
   const REQUIRED = [
     "Environmental",
+    "Insulation",
+    "Waterproofing",
+    "Stucco / EIFS",
     "Concrete (Precast)",
     "Concrete (with Crane)",
     "Concrete (Standard)",
@@ -116,6 +120,14 @@ describe("company standard — pollution liability by scope (Exhibit D section B
     "Elevators",
     "Fire Sprinkler",
     "Electrical",
+    // Decided with the contractor — see the note in companyStandard.ts.
+    "Concrete (Site / Flatwork)",
+    "Painting",
+    // Interior finishes: B.5(i) names EXTERIOR stone, not interior tile.
+    "Tile",
+    "Flooring",
+    "Acoustical Ceilings (ACT)",
+    "Finish Carpentry / Millwork",
   ];
 
   it.each(REQUIRED)("requires $2M pollution for %s", (trade) => {
@@ -152,5 +164,40 @@ describe("company standard — trade list", () => {
     for (const trade of Object.keys(buildCompanyStandardTradeRules())) {
       expect(trades.has(trade), `${trade} has a rule but is not selectable`).toBe(true);
     }
+  });
+});
+
+describe("company standard — apartment finish trades", () => {
+  const trades = buildCompanyStandardTrades(DEFAULT_TRADES);
+
+  it("adds every finish trade an apartment build needs", () => {
+    for (const t of ADDITIONAL_TRADES) expect(trades).toContain(t);
+  });
+
+  it("splits site concrete from structural concrete", () => {
+    // Exhibit D B.5(iv) reaches "building foundations"; curb and flatwork are
+    // not foundations, so the two cannot share one trade.
+    expect(effective("Concrete (Site / Flatwork)").pollutionLiability).toBe(0);
+    expect(effective("Concrete (Standard)").pollutionLiability).toBe(2_000_000);
+    // Both still carry the exhibit's $5M excess.
+    expect(effective("Concrete (Site / Flatwork)").umbrella).toBe(5_000_000);
+    expect(effective("Concrete (Standard)").umbrella).toBe(5_000_000);
+  });
+
+  it("leaves finish trades on the $1M baseline excess", () => {
+    // The exhibit's table ends "All other trades not listed above $1,000,000",
+    // and none of these appear in it.
+    for (const t of ["Painting", "Flooring", "Tile", "Landscaping", "Demolition"]) {
+      expect(effective(t).umbrella).toBe(1_000_000);
+    }
+  });
+
+  it("asks no professional liability of any finish trade", () => {
+    for (const t of ADDITIONAL_TRADES) expect(effective(t).professionalLiability).toBe(0);
+  });
+
+  it("does not duplicate framing, which Rough Carpentry already covers", () => {
+    expect(ADDITIONAL_TRADES).not.toContain("Framing");
+    expect(trades.filter((t) => /rough carpentry/i.test(t)).length).toBe(2);
   });
 });

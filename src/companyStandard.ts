@@ -86,6 +86,9 @@ const EXCESS_BY_TRADE: Record<string, number> = {
   Environmental: 5_000_000,
   Earthwork: 5_000_000,
   "Concrete (Standard)": 5_000_000,
+  // Curb, flatwork, and paving. Same excess as other concrete, but NOT pollution:
+  // B.5(iv) reaches "building foundations", which flatwork is not.
+  "Concrete (Site / Flatwork)": 5_000_000,
   Masonry: 5_000_000,
   "Rough Carpentry (Standard)": 5_000_000,
   Siding: 5_000_000,
@@ -107,12 +110,17 @@ const EXCESS_BY_TRADE: Record<string, number> = {
  *   (iv)  building foundations including any concrete or masonry work
  *   plus  (a) work involving transport/release of pollutants
  *
- * Two trades the exhibit does not name either way were put to the contractor
- * and CONFIRMED excluded (2026-08-31) — do not re-add them without asking:
- *   - Earthwork. Excavation is not "building foundations" in the exhibit's
- *     words, even though hauling contaminated soil would fall under (a).
- *   - Fire Sprinkler. Treated as distinct from the plumbing/heating/ventilating
- *     systems named in (ii), despite the surface resemblance.
+ * Trades the exhibit does not name either way, decided with the contractor
+ * (2026-08-31) — do not change these without asking:
+ *   - Earthwork: EXCLUDED. Excavation is not "building foundations", even
+ *     though hauling contaminated soil would fall under (a).
+ *   - Fire Sprinkler: EXCLUDED. Treated as distinct from the plumbing/heating/
+ *     ventilating systems named in (ii), despite the surface resemblance.
+ *   - Concrete (Site / Flatwork): EXCLUDED, and split out as its own trade.
+ *     Clause (iv) reaches "building foundations"; curb, flatwork, and paving
+ *     are not foundations. Structural concrete keeps the requirement.
+ *   - Painting: EXCLUDED. Coatings appear nowhere in B.5, and on new
+ *     construction there is no lead disturbance to trigger (a).
  */
 const POLLUTION_TRADES = [
   "Environmental",
@@ -124,6 +132,9 @@ const POLLUTION_TRADES = [
   "Roofing",
   "Windows",
   "Drywall",
+  "Insulation",
+  "Waterproofing",
+  "Stucco / EIFS",
   "Plumbing",
   "HVAC",
 ];
@@ -151,11 +162,47 @@ export function buildCompanyStandardTradeRules(): Record<string, TradeRule> {
   return rules;
 }
 
-/** Trade list including the design/build variants the rules above reference. */
+/**
+ * Trades the built-in list omits, which a residential/apartment build needs.
+ *
+ * The stock list stops at the shell — earthwork through drywall and MEP — so
+ * every finish trade on an apartment project had to be enrolled as "Other
+ * Trades", which tells a reviewer nothing.
+ *
+ * All of these take the $1,000,000 baseline excess: the exhibit's table ends
+ * with "All other trades not listed above — $1,000,000", and none of them
+ * appear in it. They need no excess rule, only the pollution ones above.
+ *
+ * NOTE: framing is already covered by "Rough Carpentry" — do not add a
+ * duplicate for it.
+ */
+export const ADDITIONAL_TRADES = [
+  "Concrete (Site / Flatwork)",
+  "Waterproofing",
+  "Insulation",
+  "Stucco / EIFS",
+  "Painting",
+  "Finish Carpentry / Millwork",
+  "Acoustical Ceilings (ACT)",
+  "Flooring",
+  "Tile",
+  "Cabinets & Countertops",
+  "Doors, Frames & Hardware",
+  "Appliances",
+  "Low Voltage / Data / Security",
+  "Misc Metals / Railings",
+  "Garage Doors",
+  "Landscaping",
+  "Paving / Asphalt",
+  "Fencing",
+  "Demolition",
+];
+
+/** Trade list including the finish trades and design/build variants the rules reference. */
 export function buildCompanyStandardTrades(existing: string[]): string[] {
   const variants = DESIGN_BUILD_TRADES.map((t) => `${t}${DESIGN_BUILD_SUFFIX}`);
   const merged = [...existing];
-  for (const v of variants) if (!merged.includes(v)) merged.push(v);
+  for (const t of [...ADDITIONAL_TRADES, ...variants]) if (!merged.includes(t)) merged.push(t);
   return merged;
 }
 
