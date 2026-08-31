@@ -222,6 +222,8 @@ function buildSampleCoiData(fileName: string, custom_requirements?: any, additio
     // happy path, so nothing here should ever land in review.
     unreadable_fields: [],
     certificate_page: 1,
+    // No real document behind a canned fixture, so nothing to point at.
+    field_locations: [],
     policy_lines: [
       { line: "General Liability", policy_number: "GL-SANDBOX-001", effective: null, expiration: expireDate },
       { line: "Automobile", policy_number: "CA-SANDBOX-001", effective: null, expiration: expireDate },
@@ -403,6 +405,12 @@ Extract:
 18. "gl_form": Which basis is the Commercial General Liability written on? Read the FORM checkboxes in the CGL section — "OCCUR" vs "CLAIMS-MADE". Return exactly "Occurrence", "Claims-Made", or "Unknown" if it cannot be determined.
 19. "endorsement_facts": An object of booleans. Set each true only if the certificate clearly indicates it (a checkbox / "Y", or explicit wording in the Description of Operations box), otherwise false: "waiver_of_subrogation" (a Waiver of Subrogation in favor of others, e.g. CG 24 04), "primary_noncontributory" (coverage stated to be Primary and Non-Contributory, e.g. CG 20 01), "project_aggregate" (a dedicated per-project General Aggregate applies, e.g. CG 25 03/04), "completed_ops_ai" (Additional Insured for COMPLETED operations / products-completed operations, e.g. CG 20 37).${customPromptText}${aiPromptText}
 
+"field_locations": Where each value physically sits on the page, so a reviewer can see what was read. One entry per field you actually read, with:
+  - "field": one of insured_name, policy_expiration_date, gl_each_occurrence, gl_general_aggregate, gl_products_completed, auto_combined_single_limit, umbrella_limit, employers_liability_accident, employers_liability_disease_person, employers_liability_disease_limit, additional_insured
+  - "page": the 1-based page the value is on
+  - "box_2d": [ymin, xmin, ymax, xmax], each 0-1000, normalized to that page's width and height
+Box the VALUE itself (the dollar figure, the date, the name block) - NOT the label beside it. The ACORD 25 LIMITS column repeats similar figures on adjacent rows, so being one row out points the reviewer at the wrong coverage. Omit any field you did not read rather than guessing a box for it.
+
 "certificate_page": The 1-based page number of the ACORD 25 certificate itself. Subcontractors routinely send a PACKET - a cover letter, then the certificate, then endorsement pages - so this is often NOT page 1. Return the page carrying the "CERTIFICATE OF LIABILITY INSURANCE" header and the coverage grid. Return null if you cannot tell.
 
 CRITICAL — distinguish "not there" from "cannot read it":
@@ -449,6 +457,19 @@ Strictly return ONLY the requested JSON schema.`;
                   policy_number: { type: Type.STRING, nullable: true },
                   effective: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
                   expiration: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
+                },
+              },
+            },
+            field_locations: {
+              type: Type.ARRAY,
+              description:
+                "Where each read value sits on the page: box the value itself, not its label. Normalized 0-1000 as [ymin, xmin, ymax, xmax].",
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  field: { type: Type.STRING },
+                  page: { type: Type.NUMBER },
+                  box_2d: { type: Type.ARRAY, items: { type: Type.NUMBER } },
                 },
               },
             },
@@ -508,6 +529,7 @@ Strictly return ONLY the requested JSON schema.`;
             "unreadable_fields",
             "policy_lines",
             "certificate_page",
+            "field_locations",
           ],
         },
       },
@@ -516,8 +538,10 @@ Strictly return ONLY the requested JSON schema.`;
     const textResponse = response.text;
     if (!textResponse) throw new Error("Empty response from the extraction model.");
     console.log("Raw Gemini Output:", textResponse);
-    const parsedData = normalizeCertificatePage(
-      resolveGoverningExpiration(normalizeReadability(JSON.parse(textResponse.trim())))
+    const parsedData = normalizeFieldLocations(
+      normalizeCertificatePage(
+        resolveGoverningExpiration(normalizeReadability(JSON.parse(textResponse.trim())))
+      )
     );
     return { status: 200, body: { success: true, data: parsedData, simulated: false } };
   } catch (extractionError: any) {
@@ -587,6 +611,57 @@ export function normalizeReadability(data: any): any {
   );
 
   return { ...data, unreadable_fields: unreadable };
+}
+
+/** Fields the highlight overlay knows how to draw. */
+const LOCATABLE_FIELDS = new Set([
+  ...READABILITY_TRACKED_FIELDS,
+  "additional_insured",
+]);
+
+/**
+ * Validate the model's bounding boxes.
+ *
+ * A misplaced box is worse than no box: the ACORD 25 LIMITS column stacks
+ * similar dollar figures on adjacent rows, so a box one row out tells the
+ * reviewer a number belongs to a coverage it does not. Anything malformed is
+ * dropped rather than clamped into place, and the viewer falls back to the
+ * template only when nothing survives.
+ *
+ * Exported for tests.
+ */
+export function normalizeFieldLocations(data: any): any {
+  if (!data || typeof data !== "object") return data;
+  const raw = Array.isArray(data.field_locations) ? data.field_locations : [];
+  const seen = new Set<string>();
+
+  const clean = raw.filter((loc: any) => {
+    if (!loc || typeof loc !== "object") return false;
+    const field = String(loc.field || "").trim();
+    if (!LOCATABLE_FIELDS.has(field)) return false;
+    // One box per field — a second is a guess, not a correction.
+    if (seen.has(field)) return false;
+
+    const box = loc.box_2d;
+    if (!Array.isArray(box) || box.length !== 4) return false;
+    if (!box.every((n: any) => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1000)) return false;
+    const [ymin, xmin, ymax, xmax] = box;
+    // A zero-area or inverted box would render as an invisible or nonsense
+    // outline; neither helps the reviewer.
+    if (ymax <= ymin || xmax <= xmin) return false;
+
+    const page = typeof loc.page === "number" ? loc.page : Number(loc.page);
+    if (!Number.isInteger(page) || page < 1 || page > 200) return false;
+
+    seen.add(field);
+    return true;
+  }).map((loc: any) => ({
+    field: String(loc.field).trim(),
+    page: Number(loc.page),
+    box_2d: loc.box_2d.map(Number),
+  }));
+
+  return { ...data, field_locations: clean };
 }
 
 /**

@@ -45,6 +45,11 @@ interface DocumentViewerProps {
   fileMime: string;
   locations?: FieldLocation[];
   /**
+   * Bounding boxes the extraction model reported for this specific document.
+   * Preferred over the fixed template, which cannot survive a rescaled scan.
+   */
+  modelLocations?: FieldLocation[];
+  /**
    * 1-based page carrying the ACORD 25 itself. Subcontractors routinely send a
    * packet — cover letter, certificate, endorsements — so the certificate is
    * often not page 1. `locations` is a template anchored to page 1; this moves
@@ -102,6 +107,7 @@ export default function DocumentViewer({
   fileData,
   fileMime,
   locations = [],
+  modelLocations,
   templatePage,
   fieldStatus = {},
   fieldLabels = {},
@@ -239,16 +245,21 @@ export default function DocumentViewer({
   }
 
   /**
-   * Where to draw the highlight boxes.
+   * Where to draw the highlight boxes, most trustworthy source first.
    *
-   * The text-layer parse is exact per certificate and already carries the right
-   * page, so it wins whenever it found anything. Otherwise we fall back to the
-   * ACORD 25 template, which is authored against page 1 and has to be moved
-   * onto whichever page actually holds the certificate.
+   *  1. The text layer. Anchors on the literal "EACH OCCURRENCE" text and snaps
+   *     to the figure beside it, so it is exact for this certificate. Only
+   *     digital PDFs have one.
+   *  2. Boxes the extraction model reported. Measured per document, so scanner
+   *     scaling and skew do not throw them off.
+   *  3. The ACORD 25 template. Fixed percentages of the page — a guess at where
+   *     an average certificate puts each box. On a scan that is off by enough
+   *     to label the wrong row, so it is genuinely last.
    *
-   * When that page is unknown on a multi-page document we draw NOTHING. Boxes
-   * over a cover letter claim the app read values off a page it never read —
-   * worse than no highlights at all.
+   * The template is also authored against page 1 and has to be moved onto the
+   * page that actually holds the certificate; when that page is unknown on a
+   * multi-page document we draw NOTHING, since boxes over a cover letter claim
+   * the app read values off a page it never opened.
    */
   const templateFallback = (): FieldLocation[] => {
     if (locations.length === 0) return [];
@@ -257,7 +268,11 @@ export default function DocumentViewer({
     return locations.map((l) => ({ ...l, page: templatePage }));
   };
 
-  const effectiveLocations = derived.length > 0 ? derived : templateFallback();
+  const modelBoxes = (modelLocations ?? []).filter(isValidBox);
+  const effectiveLocations =
+    derived.length > 0 ? derived : modelBoxes.length > 0 ? modelBoxes : templateFallback();
+  const locationSource: "text" | "model" | "template" | "none" =
+    derived.length > 0 ? "text" : modelBoxes.length > 0 ? "model" : effectiveLocations.length > 0 ? "template" : "none";
   const locatedCount = effectiveLocations.filter(isValidBox).length;
   // Distinguish "the model gave us nothing" from "we withheld a guess".
   const suppressedTemplate =
@@ -271,7 +286,9 @@ export default function DocumentViewer({
           {locatedCount > 0 ? (
             <span className="font-semibold text-slate-600">
               {locatedCount} field{locatedCount === 1 ? "" : "s"} highlighted
-              {derived.length === 0 && templatePage ? ` on page ${templatePage}` : ""}
+              {locationSource === "text" && " — matched to the document's own text"}
+              {locationSource === "model" && " — positions read from the document"}
+              {locationSource === "template" && " — estimated positions, verify against the certificate"}
             </span>
           ) : suppressedTemplate ? (
             <span className="text-amber-600" title="This document has several pages and the certificate page could not be identified. Highlights are withheld rather than drawn on the wrong page.">

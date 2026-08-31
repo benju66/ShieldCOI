@@ -4,6 +4,7 @@ import {
   READABILITY_TRACKED_FIELDS,
   resolveGoverningExpiration,
   normalizeCertificatePage,
+  normalizeFieldLocations,
 } from "./_scan";
 
 /**
@@ -205,5 +206,81 @@ describe("normalizeCertificatePage", () => {
 
   it("passes through non-object input unchanged", () => {
     expect(normalizeCertificatePage(null)).toBeNull();
+  });
+});
+
+/**
+ * A misplaced highlight is worse than none: the ACORD 25 LIMITS column stacks
+ * similar dollar figures on adjacent rows, so a box one row out tells a
+ * reviewer a number belongs to a coverage it does not.
+ */
+describe("normalizeFieldLocations", () => {
+  const box = (over: any = {}) => ({
+    field: "gl_each_occurrence",
+    page: 2,
+    box_2d: [100, 200, 130, 400],
+    ...over,
+  });
+
+  it("keeps a well-formed box", () => {
+    const out = normalizeFieldLocations({ field_locations: [box()] });
+    expect(out.field_locations).toEqual([{ field: "gl_each_occurrence", page: 2, box_2d: [100, 200, 130, 400] }]);
+  });
+
+  it("drops fields the overlay cannot draw", () => {
+    const out = normalizeFieldLocations({ field_locations: [box({ field: "invented_field" })] });
+    expect(out.field_locations).toEqual([]);
+  });
+
+  it("drops malformed boxes rather than repairing them", () => {
+    const bad = [
+      box({ box_2d: [100, 200, 130] }),
+      box({ box_2d: [100, 200, 130, 400, 500] }),
+      box({ box_2d: [100, 200, "130", 400] }),
+      box({ box_2d: [-5, 200, 130, 400] }),
+      box({ box_2d: [100, 200, 1200, 400] }),
+      box({ box_2d: [100, 200, NaN, 400] }),
+      box({ box_2d: "nope" }),
+    ];
+    for (const b of bad) {
+      expect(normalizeFieldLocations({ field_locations: [b] }).field_locations).toEqual([]);
+    }
+  });
+
+  it("drops inverted or zero-area boxes", () => {
+    // Either renders as an invisible or nonsense outline.
+    expect(normalizeFieldLocations({ field_locations: [box({ box_2d: [130, 200, 100, 400] })] }).field_locations).toEqual([]);
+    expect(normalizeFieldLocations({ field_locations: [box({ box_2d: [100, 200, 100, 400] })] }).field_locations).toEqual([]);
+    expect(normalizeFieldLocations({ field_locations: [box({ box_2d: [100, 400, 130, 200] })] }).field_locations).toEqual([]);
+  });
+
+  it("requires a real page number", () => {
+    for (const page of [0, -1, 1.5, null, undefined, "two"]) {
+      expect(normalizeFieldLocations({ field_locations: [box({ page })] }).field_locations).toEqual([]);
+    }
+  });
+
+  it("keeps only the first box per field", () => {
+    // A second box for the same field is a guess, not a correction.
+    const out = normalizeFieldLocations({
+      field_locations: [box(), box({ box_2d: [500, 200, 530, 400] })],
+    });
+    expect(out.field_locations).toHaveLength(1);
+    expect(out.field_locations[0].box_2d).toEqual([100, 200, 130, 400]);
+  });
+
+  it("normalizes a missing or malformed list to an empty array", () => {
+    expect(normalizeFieldLocations({}).field_locations).toEqual([]);
+    expect(normalizeFieldLocations({ field_locations: "nope" }).field_locations).toEqual([]);
+    expect(normalizeFieldLocations({ field_locations: [null, 3] }).field_locations).toEqual([]);
+  });
+
+  it("leaves other extracted values untouched", () => {
+    const out = normalizeFieldLocations({ field_locations: [], gl_each_occurrence: 1_000_000 });
+    expect(out.gl_each_occurrence).toBe(1_000_000);
+  });
+
+  it("passes through non-object input unchanged", () => {
+    expect(normalizeFieldLocations(null)).toBeNull();
   });
 });

@@ -356,6 +356,7 @@ export default function VerificationDrawer({
               fileData={activeData.file_data || ""}
               fileMime={activeData.file_mime || "image/png"}
               locations={ACORD25_FIELD_TEMPLATE}
+              modelLocations={activeData.field_locations}
               templatePage={activeData.certificate_page}
               fieldStatus={fieldStatus}
               fieldLabels={fieldLabels}
