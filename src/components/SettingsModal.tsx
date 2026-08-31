@@ -13,10 +13,17 @@ import {
   User,
   KeyRound,
   Tag,
+  Sparkles,
 } from "lucide-react";
 import { fetchSettings, todayISO, ReminderSettings, DEFAULT_REMINDER_SETTINGS } from "../settingsService";
 import { useSettings } from "../SettingsContext";
 import { TradeRule, isNonEmptyRule } from "../tradeRules";
+import {
+  COMPANY_STANDARD_REQUIREMENTS,
+  COMPANY_STANDARD_SOURCE,
+  buildCompanyStandardTradeRules,
+  buildCompanyStandardTrades,
+} from "../companyStandard";
 import { ProjectRequirements } from "../types";
 import { exportAllData, importAllData, clearAllData } from "../dbService";
 import {
@@ -187,6 +194,30 @@ export default function SettingsModal({
       setTradeRules({ ...tradeRules, [newRuleTrade]: {} });
     }
     setNewRuleTrade("");
+  };
+
+  /**
+   * Load the company's standard requirements in one action: baseline coverages,
+   * the design/build trade variants the rules reference, and every per-trade
+   * excess / pollution / professional rule from Exhibit D.
+   *
+   * Staged into local state like every other edit — nothing is written until the
+   * reviewer presses Save, so it can be inspected and adjusted first.
+   */
+  const loadCompanyStandard = () => {
+    const ok = window.confirm(
+      [
+        `Load ${COMPANY_STANDARD_SOURCE}?`,
+        "",
+        "This replaces the default project requirements and per-trade rules below, and adds the Design/Build trade variants those rules need.",
+        "",
+        "Nothing is saved until you press Save.",
+      ].join("\n")
+    );
+    if (!ok) return;
+    setDefaultReqs({ ...COMPANY_STANDARD_REQUIREMENTS });
+    setTrades(buildCompanyStandardTrades(trades));
+    setTradeRules(buildCompanyStandardTradeRules());
   };
 
   const removeRule = (trade: string) => {
@@ -846,6 +877,24 @@ export default function SettingsModal({
                       })}
                     </div>
                   )}
+
+                  {/* One-click load of the company standard. Sits above the
+                      manual add-a-rule row because hand-entering ~30 limits
+                      across 20 trades was the step that made setup painful. */}
+                  <div className="flex items-start gap-2 pt-1 pb-2 border-b border-slate-150">
+                    <button
+                      type="button"
+                      onClick={loadCompanyStandard}
+                      className="inline-flex items-center gap-1.5 text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2.5 py-1.5 hover:bg-indigo-100 cursor-pointer shrink-0"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Load company standard
+                    </button>
+                    <p className="text-[10px] text-slate-500 leading-tight pt-1">
+                      Fills the baseline limits and every per-trade excess, pollution, and design/build
+                      professional requirement from {COMPANY_STANDARD_SOURCE}. Review below, then Save.
+                    </p>
+                  </div>
 
                   {/* Add a rule */}
                   <div className="flex items-center gap-2 pt-1">
