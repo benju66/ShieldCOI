@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { normalizeReadability, READABILITY_TRACKED_FIELDS, resolveGoverningExpiration } from "./_scan";
+import {
+  normalizeReadability,
+  READABILITY_TRACKED_FIELDS,
+  resolveGoverningExpiration,
+  normalizeCertificatePage,
+} from "./_scan";
 
 /**
  * normalizeReadability decides which certificates land in front of a human, so
@@ -163,5 +168,42 @@ describe("resolveGoverningExpiration", () => {
 
   it("passes through non-object input unchanged", () => {
     expect(resolveGoverningExpiration(null)).toBeNull();
+  });
+});
+
+/**
+ * Subcontractors send packets — a cover letter, then the certificate, then
+ * endorsement pages. The highlight overlay anchors its ACORD template to this
+ * page, so a wrong value draws boxes over a page the app never read.
+ */
+describe("normalizeCertificatePage", () => {
+  it("keeps a sane page number", () => {
+    expect(normalizeCertificatePage({ certificate_page: 2 }).certificate_page).toBe(2);
+    expect(normalizeCertificatePage({ certificate_page: 1 }).certificate_page).toBe(1);
+  });
+
+  it("coerces a numeric string", () => {
+    expect(normalizeCertificatePage({ certificate_page: "3" }).certificate_page).toBe(3);
+  });
+
+  it("rejects anything that is not a real page", () => {
+    // Null is the honest answer, and the viewer withholds highlights on it.
+    for (const bad of [0, -1, 1.5, "page two", null, undefined, NaN, Infinity, 9999]) {
+      expect(normalizeCertificatePage({ certificate_page: bad }).certificate_page).toBeNull();
+    }
+  });
+
+  it("normalizes a missing field to null rather than assuming page 1", () => {
+    // Assuming page 1 is what put highlights on a cover letter.
+    expect(normalizeCertificatePage({}).certificate_page).toBeNull();
+  });
+
+  it("leaves other extracted values untouched", () => {
+    const out = normalizeCertificatePage({ certificate_page: 2, gl_each_occurrence: 1_000_000 });
+    expect(out.gl_each_occurrence).toBe(1_000_000);
+  });
+
+  it("passes through non-object input unchanged", () => {
+    expect(normalizeCertificatePage(null)).toBeNull();
   });
 });

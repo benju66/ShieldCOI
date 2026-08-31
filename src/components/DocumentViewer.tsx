@@ -44,6 +44,13 @@ interface DocumentViewerProps {
   fileData: string; // base64, no data: prefix
   fileMime: string;
   locations?: FieldLocation[];
+  /**
+   * 1-based page carrying the ACORD 25 itself. Subcontractors routinely send a
+   * packet — cover letter, certificate, endorsements — so the certificate is
+   * often not page 1. `locations` is a template anchored to page 1; this moves
+   * it onto the real page. Null/undefined means unknown.
+   */
+  templatePage?: number | null;
   fieldStatus?: Record<string, "pass" | "fail" | "neutral">;
   fieldLabels?: Record<string, string>;
 }
@@ -91,7 +98,14 @@ function pageOf(l: FieldLocation): number {
   return Number.isFinite(p) && p >= 1 && p <= 50 ? p : 1;
 }
 
-export default function DocumentViewer({ fileData, fileMime, locations = [], fieldStatus = {}, fieldLabels = {} }: DocumentViewerProps) {
+export default function DocumentViewer({
+  fileData,
+  fileMime,
+  locations = [],
+  templatePage,
+  fieldStatus = {},
+  fieldLabels = {},
+}: DocumentViewerProps) {
   const isPdf = /pdf/i.test(fileMime);
   const [pages, setPages] = useState<RenderedPage[]>([]);
   const [status, setStatus] = useState<"loading" | "done" | "error">("loading");
@@ -224,8 +238,30 @@ export default function DocumentViewer({ fileData, fileMime, locations = [], fie
     );
   }
 
-  const effectiveLocations = derived.length > 0 ? derived : locations;
+  /**
+   * Where to draw the highlight boxes.
+   *
+   * The text-layer parse is exact per certificate and already carries the right
+   * page, so it wins whenever it found anything. Otherwise we fall back to the
+   * ACORD 25 template, which is authored against page 1 and has to be moved
+   * onto whichever page actually holds the certificate.
+   *
+   * When that page is unknown on a multi-page document we draw NOTHING. Boxes
+   * over a cover letter claim the app read values off a page it never read —
+   * worse than no highlights at all.
+   */
+  const templateFallback = (): FieldLocation[] => {
+    if (locations.length === 0) return [];
+    if (pages.length <= 1) return locations;
+    if (!templatePage) return [];
+    return locations.map((l) => ({ ...l, page: templatePage }));
+  };
+
+  const effectiveLocations = derived.length > 0 ? derived : templateFallback();
   const locatedCount = effectiveLocations.filter(isValidBox).length;
+  // Distinguish "the model gave us nothing" from "we withheld a guess".
+  const suppressedTemplate =
+    derived.length === 0 && locations.length > 0 && pages.length > 1 && !templatePage;
 
   return (
     <div className="relative h-full flex flex-col">
@@ -233,7 +269,14 @@ export default function DocumentViewer({ fileData, fileMime, locations = [], fie
       <div className="flex items-center justify-between mb-2 flex-shrink-0">
         <span className="text-[10px] text-slate-500">
           {locatedCount > 0 ? (
-            <span className="font-semibold text-slate-600">{locatedCount} field{locatedCount === 1 ? "" : "s"} highlighted</span>
+            <span className="font-semibold text-slate-600">
+              {locatedCount} field{locatedCount === 1 ? "" : "s"} highlighted
+              {derived.length === 0 && templatePage ? ` on page ${templatePage}` : ""}
+            </span>
+          ) : suppressedTemplate ? (
+            <span className="text-amber-600" title="This document has several pages and the certificate page could not be identified. Highlights are withheld rather than drawn on the wrong page.">
+              Highlights withheld — certificate page unknown
+            </span>
           ) : (
             <span className="text-amber-600">No highlights returned</span>
           )}

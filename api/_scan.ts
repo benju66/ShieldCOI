@@ -221,6 +221,7 @@ function buildSampleCoiData(fileName: string, custom_requirements?: any, additio
     // Canned fixtures are legible by construction — the sandbox demonstrates the
     // happy path, so nothing here should ever land in review.
     unreadable_fields: [],
+    certificate_page: 1,
     policy_lines: [
       { line: "General Liability", policy_number: "GL-SANDBOX-001", effective: null, expiration: expireDate },
       { line: "Automobile", policy_number: "CA-SANDBOX-001", effective: null, expiration: expireDate },
@@ -402,6 +403,8 @@ Extract:
 18. "gl_form": Which basis is the Commercial General Liability written on? Read the FORM checkboxes in the CGL section — "OCCUR" vs "CLAIMS-MADE". Return exactly "Occurrence", "Claims-Made", or "Unknown" if it cannot be determined.
 19. "endorsement_facts": An object of booleans. Set each true only if the certificate clearly indicates it (a checkbox / "Y", or explicit wording in the Description of Operations box), otherwise false: "waiver_of_subrogation" (a Waiver of Subrogation in favor of others, e.g. CG 24 04), "primary_noncontributory" (coverage stated to be Primary and Non-Contributory, e.g. CG 20 01), "project_aggregate" (a dedicated per-project General Aggregate applies, e.g. CG 25 03/04), "completed_ops_ai" (Additional Insured for COMPLETED operations / products-completed operations, e.g. CG 20 37).${customPromptText}${aiPromptText}
 
+"certificate_page": The 1-based page number of the ACORD 25 certificate itself. Subcontractors routinely send a PACKET - a cover letter, then the certificate, then endorsement pages - so this is often NOT page 1. Return the page carrying the "CERTIFICATE OF LIABILITY INSURANCE" header and the coverage grid. Return null if you cannot tell.
+
 CRITICAL — distinguish "not there" from "cannot read it":
 - A value is ABSENT when the box is genuinely blank, struck through, or that coverage line is simply not on this certificate. Return null and do NOT list the field in "unreadable_fields". Absent coverage is a real answer.
 - A value is UNREADABLE when it plausibly IS on the certificate but you cannot state it with confidence — the scan is blurry, the box is cut off or obscured, digits are ambiguous, or two candidate values conflict. Return null AND list the exact field name in "unreadable_fields".
@@ -448,6 +451,12 @@ Strictly return ONLY the requested JSON schema.`;
                   expiration: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
                 },
               },
+            },
+            certificate_page: {
+              type: Type.NUMBER,
+              nullable: true,
+              description:
+                "1-based page number of the ACORD 25 itself. Often not page 1 - subs send cover letters and endorsements in the same PDF.",
             },
             unreadable_fields: {
               type: Type.ARRAY,
@@ -498,6 +507,7 @@ Strictly return ONLY the requested JSON schema.`;
             "endorsement_facts",
             "unreadable_fields",
             "policy_lines",
+            "certificate_page",
           ],
         },
       },
@@ -506,7 +516,9 @@ Strictly return ONLY the requested JSON schema.`;
     const textResponse = response.text;
     if (!textResponse) throw new Error("Empty response from the extraction model.");
     console.log("Raw Gemini Output:", textResponse);
-    const parsedData = resolveGoverningExpiration(normalizeReadability(JSON.parse(textResponse.trim())));
+    const parsedData = normalizeCertificatePage(
+      resolveGoverningExpiration(normalizeReadability(JSON.parse(textResponse.trim())))
+    );
     return { status: 200, body: { success: true, data: parsedData, simulated: false } };
   } catch (extractionError: any) {
     // FAIL CLOSED — surface the failure instead of inventing certificate values.
@@ -575,6 +587,25 @@ export function normalizeReadability(data: any): any {
   );
 
   return { ...data, unreadable_fields: unreadable };
+}
+
+/**
+ * Normalize the reported certificate page.
+ *
+ * The highlight overlay anchors its ACORD 25 template to this page. A wrong
+ * page is worse than none: boxes drawn over a cover letter look like the app
+ * read values off a document it never read, which is precisely the false
+ * confidence this app exists to avoid. So anything not a sane positive integer
+ * becomes null, and the viewer then draws nothing rather than guessing.
+ *
+ * Exported for tests.
+ */
+export function normalizeCertificatePage(data: any): any {
+  if (!data || typeof data !== "object") return data;
+  const raw = data.certificate_page;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  const valid = Number.isInteger(n) && n >= 1 && n <= 200;
+  return { ...data, certificate_page: valid ? n : null };
 }
 
 /**

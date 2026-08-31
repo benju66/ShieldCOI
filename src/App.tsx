@@ -143,6 +143,8 @@ export default function App() {
     cross_check?: CrossCheck;
     /** Per-coverage policy periods; the earliest required expiration governs. */
     policy_lines?: PolicyLine[];
+    /** 1-based page holding the ACORD 25 (packets often lead with a cover letter). */
+    certificate_page?: number | null;
     additional_insured_named?: string[];
     additional_insured_blanket?: boolean;
     additional_insured_text?: string;

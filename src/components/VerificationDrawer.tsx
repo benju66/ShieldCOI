@@ -39,6 +39,8 @@ interface VerificationDrawerProps {
     cross_check?: CrossCheck;
     /** Per-coverage policy periods; the earliest required expiration governs. */
     policy_lines?: PolicyLine[];
+    /** 1-based page holding the ACORD 25 (packets often lead with a cover letter). */
+    certificate_page?: number | null;
     file_name: string;
     simulated: boolean;
     warning?: string;
@@ -113,6 +115,8 @@ export default function VerificationDrawer({
     cross_check?: CrossCheck;
     /** Per-coverage policy periods; the earliest required expiration governs. */
     policy_lines?: PolicyLine[];
+    /** 1-based page holding the ACORD 25 (packets often lead with a cover letter). */
+    certificate_page?: number | null;
     file_name: string;
     simulated: boolean;
     warning?: string;
@@ -156,6 +160,7 @@ export default function VerificationDrawer({
         unreadable_fields: extractedData.unreadable_fields || [],
         cross_check: extractedData.cross_check,
         policy_lines: extractedData.policy_lines || [],
+        certificate_page: extractedData.certificate_page ?? null,
         file_name: extractedData.file_name || "",
         simulated: !!extractedData.simulated,
         warning: extractedData.warning,
@@ -351,6 +356,7 @@ export default function VerificationDrawer({
               fileData={activeData.file_data || ""}
               fileMime={activeData.file_mime || "image/png"}
               locations={ACORD25_FIELD_TEMPLATE}
+              templatePage={activeData.certificate_page}
               fieldStatus={fieldStatus}
               fieldLabels={fieldLabels}
             />

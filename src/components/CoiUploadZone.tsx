@@ -29,6 +29,8 @@ interface CoiUploadZoneProps {
     cross_check?: CrossCheck;
     /** Per-coverage policy periods; the earliest required expiration governs. */
     policy_lines?: PolicyLine[];
+    /** 1-based page holding the ACORD 25 (packets often lead with a cover letter). */
+    certificate_page?: number | null;
     file_name: string;
     simulated: boolean;
     warning?: string;
