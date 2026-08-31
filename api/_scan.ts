@@ -421,6 +421,13 @@ CRITICAL — distinguish "not there" from "cannot read it":
 
 Strictly return ONLY the requested JSON schema.`;
 
+    // Timed so a 504 can be diagnosed from the function log rather than guessed
+    // at: this records how much of the budget the model call itself consumed,
+    // and how large an input it was given.
+    const startedAt = Date.now();
+    const inputKb = Math.round((fileData?.length || 0) / 1024);
+    console.log(`COI scan: starting extraction, ${inputKb}KB base64 input, mime=${mimeType}`);
+
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
       contents: [imagePart, { text: promptText }],
@@ -535,7 +542,11 @@ Strictly return ONLY the requested JSON schema.`;
       },
     });
 
+    const elapsedMs = Date.now() - startedAt;
     const textResponse = response.text;
+    console.log(
+      `COI scan: extraction returned in ${elapsedMs}ms, ${(textResponse?.length || 0)} chars of JSON`
+    );
     if (!textResponse) throw new Error("Empty response from the extraction model.");
     console.log("Raw Gemini Output:", textResponse);
     const parsedData = normalizeFieldLocations(
