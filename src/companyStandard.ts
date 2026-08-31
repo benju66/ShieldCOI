@@ -107,11 +107,12 @@ const EXCESS_BY_TRADE: Record<string, number> = {
  *   (iv)  building foundations including any concrete or masonry work
  *   plus  (a) work involving transport/release of pollutants
  *
- * TWO JUDGMENT CALLS worth checking against how you actually contract:
- *   - Earthwork is excluded. It is not "foundations" in the exhibit's words,
- *     though hauling contaminated soil would fall under (a).
- *   - Fire Sprinkler is excluded. It is arguably a "plumbing system" under (ii).
- * Both are one line to change if you read them the other way.
+ * Two trades the exhibit does not name either way were put to the contractor
+ * and CONFIRMED excluded (2026-08-31) — do not re-add them without asking:
+ *   - Earthwork. Excavation is not "building foundations" in the exhibit's
+ *     words, even though hauling contaminated soil would fall under (a).
+ *   - Fire Sprinkler. Treated as distinct from the plumbing/heating/ventilating
+ *     systems named in (ii), despite the surface resemblance.
  */
 const POLLUTION_TRADES = [
   "Environmental",

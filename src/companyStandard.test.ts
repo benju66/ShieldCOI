@@ -105,7 +105,18 @@ describe("company standard — pollution liability by scope (Exhibit D section B
     "Plumbing",
     "HVAC",
   ];
-  const NOT_REQUIRED = ["Surveying", "Rough Carpentry (Standard)", "Pool", "Elevators", "Electrical"];
+  // Earthwork and Fire Sprinkler are the two the exhibit does not name either
+  // way. Both were put to the contractor and confirmed excluded — pinned here
+  // so the decision is not quietly reversed later.
+  const NOT_REQUIRED = [
+    "Surveying",
+    "Earthwork",
+    "Rough Carpentry (Standard)",
+    "Pool",
+    "Elevators",
+    "Fire Sprinkler",
+    "Electrical",
+  ];
 
   it.each(REQUIRED)("requires $2M pollution for %s", (trade) => {
     expect(effective(trade).pollutionLiability).toBe(2_000_000);
