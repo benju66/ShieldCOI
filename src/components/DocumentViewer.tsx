@@ -268,9 +268,30 @@ export default function DocumentViewer({
     return locations.map((l) => ({ ...l, page: templatePage }));
   };
 
+  /**
+   * Keep only the page that actually looks like the certificate.
+   *
+   * An endorsement page carries the word "INSURED" too, so the parser locates a
+   * stray insured_name on it and the reviewer gets a lone box floating on an
+   * endorsement. The certificate page is the one that yielded the most fields —
+   * the coverage grid is what produces a dozen matches, and no other page in a
+   * packet comes close.
+   */
+  const derivedOnCertificatePage = (): FieldLocation[] => {
+    if (derived.length === 0) return derived;
+    const byPage = new Map<number, FieldLocation[]>();
+    for (const d of derived) {
+      const p = d.page ?? 1;
+      byPage.set(p, [...(byPage.get(p) ?? []), d]);
+    }
+    let best: FieldLocation[] = [];
+    for (const group of byPage.values()) if (group.length > best.length) best = group;
+    return best;
+  };
+
   const modelBoxes = (modelLocations ?? []).filter(isValidBox);
   const effectiveLocations =
-    derived.length > 0 ? derived : modelBoxes.length > 0 ? modelBoxes : templateFallback();
+    derived.length > 0 ? derivedOnCertificatePage() : modelBoxes.length > 0 ? modelBoxes : templateFallback();
   const locationSource: "text" | "model" | "template" | "none" =
     derived.length > 0 ? "text" : modelBoxes.length > 0 ? "model" : effectiveLocations.length > 0 ? "template" : "none";
   const locatedCount = effectiveLocations.filter(isValidBox).length;

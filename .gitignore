@@ -9,3 +9,7 @@ coverage/
 
 # Claude Code local config
 .claude/
+
+# Real subcontractor certificates kept as references. These carry live policy
+# numbers, addresses, and insured names - they must never reach the remote.
+Resources/
