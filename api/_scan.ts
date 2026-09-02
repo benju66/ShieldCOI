@@ -405,12 +405,6 @@ Extract:
 18. "gl_form": Which basis is the Commercial General Liability written on? Read the FORM checkboxes in the CGL section — "OCCUR" vs "CLAIMS-MADE". Return exactly "Occurrence", "Claims-Made", or "Unknown" if it cannot be determined.
 19. "endorsement_facts": An object of booleans. Set each true only if the certificate clearly indicates it (a checkbox / "Y", or explicit wording in the Description of Operations box), otherwise false: "waiver_of_subrogation" (a Waiver of Subrogation in favor of others, e.g. CG 24 04), "primary_noncontributory" (coverage stated to be Primary and Non-Contributory, e.g. CG 20 01), "project_aggregate" (a dedicated per-project General Aggregate applies, e.g. CG 25 03/04), "completed_ops_ai" (Additional Insured for COMPLETED operations / products-completed operations, e.g. CG 20 37).${customPromptText}${aiPromptText}
 
-"field_locations": Where each value physically sits on the page, so a reviewer can see what was read. One entry per field you actually read, with:
-  - "field": one of insured_name, policy_expiration_date, gl_each_occurrence, gl_general_aggregate, gl_products_completed, auto_combined_single_limit, umbrella_limit, employers_liability_accident, employers_liability_disease_person, employers_liability_disease_limit, additional_insured
-  - "page": the 1-based page the value is on
-  - "box_2d": [ymin, xmin, ymax, xmax], each 0-1000, normalized to that page's width and height
-Box the VALUE itself (the dollar figure, the date, the name block) - NOT the label beside it. The ACORD 25 LIMITS column repeats similar figures on adjacent rows, so being one row out points the reviewer at the wrong coverage. Omit any field you did not read rather than guessing a box for it.
-
 "certificate_page": The 1-based page number of the ACORD 25 certificate itself. Subcontractors routinely send a PACKET - a cover letter, then the certificate, then endorsement pages - so this is often NOT page 1. Return the page carrying the "CERTIFICATE OF LIABILITY INSURANCE" header and the coverage grid. Return null if you cannot tell.
 
 CRITICAL — distinguish "not there" from "cannot read it":
@@ -464,19 +458,6 @@ Strictly return ONLY the requested JSON schema.`;
                   policy_number: { type: Type.STRING, nullable: true },
                   effective: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
                   expiration: { type: Type.STRING, nullable: true, description: "YYYY-MM-DD" },
-                },
-              },
-            },
-            field_locations: {
-              type: Type.ARRAY,
-              description:
-                "Where each read value sits on the page: box the value itself, not its label. Normalized 0-1000 as [ymin, xmin, ymax, xmax].",
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  field: { type: Type.STRING },
-                  page: { type: Type.NUMBER },
-                  box_2d: { type: Type.ARRAY, items: { type: Type.NUMBER } },
                 },
               },
             },
@@ -536,7 +517,6 @@ Strictly return ONLY the requested JSON schema.`;
             "unreadable_fields",
             "policy_lines",
             "certificate_page",
-            "field_locations",
           ],
         },
       },
@@ -632,6 +612,12 @@ const LOCATABLE_FIELDS = new Set([
 
 /**
  * Validate the model's bounding boxes.
+ *
+ * CURRENTLY UNUSED. Requesting boxes made the scan exceed its function budget
+ * on a multi-page scan — visual grounding is the most expensive thing to ask
+ * of the model, and highlight placement is a convenience, not a compliance
+ * input. Kept, with the viewer's support for it, so re-enabling is adding the
+ * field back to the prompt and schema once the scan has time to spare.
  *
  * A misplaced box is worse than no box: the ACORD 25 LIMITS column stacks
  * similar dollar figures on adjacent rows, so a box one row out tells the
