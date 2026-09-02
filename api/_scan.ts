@@ -725,6 +725,94 @@ export function resolveGoverningExpiration(data: any): any {
   };
 }
 
+/**
+ * Best-effort SECOND pass that asks only where each value sits on the page.
+ *
+ * Highlight placement was originally folded into the main extraction, which
+ * pushed that call past its function budget and produced 504s on a multi-page
+ * scan: precise bounding boxes need visual grounding, the slowest thing to ask
+ * of a vision model, and it was competing with every compliance field for the
+ * same time budget.
+ *
+ * Same shape as extractTradeTable above, and for the same reason — a small
+ * focused call succeeds where one large one does not, and this one carries no
+ * compliance weight, so any failure degrades to no highlights while the proven
+ * extraction is untouched. It is a separate HTTP endpoint, so it also gets its
+ * own duration budget rather than eating into the scan's.
+ */
+export async function locateCoiFields(body: any): Promise<ScanResult> {
+  const { fileData, mimeType } = body || {};
+  if (!fileData) return { status: 400, body: { error: "No document supplied." } };
+
+  let ai: GoogleGenAI;
+  try {
+    ai = getGeminiClient();
+  } catch {
+    // No key configured: highlights are optional, so this is not an error worth
+    // surfacing — the reviewer still has the document and the extracted values.
+    return { status: 200, body: { field_locations: [] } };
+  }
+
+  try {
+    const startedAt = Date.now();
+    const response = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: [
+        { inlineData: { mimeType: mimeType || "image/png", data: fileData } },
+        {
+          text: `You are looking at a scanned or digital ACORD 25 Certificate of Liability Insurance, possibly inside a larger packet (cover letter, certificate, endorsement pages).
+
+For each field below that is VISIBLE on the certificate, return where its VALUE sits — the dollar figure, the date, or the name block itself, NOT the printed label beside it.
+
+Fields: insured_name, policy_expiration_date, gl_each_occurrence, gl_general_aggregate, gl_products_completed, auto_combined_single_limit, umbrella_limit, employers_liability_accident, employers_liability_disease_person, employers_liability_disease_limit, additional_insured
+
+Guidance that matters:
+- The LIMITS column stacks similar dollar figures on adjacent rows. "EACH OCCURRENCE", "DAMAGE TO RENTED PREMISES", "MED EXP", "PERSONAL & ADV INJURY", "GENERAL AGGREGATE" and "PRODUCTS - COMP/OP AGG" are DIFFERENT rows — box the figure on the row whose printed label matches the field, not the one above or below it.
+- "EACH OCCURRENCE" appears twice: once under COMMERCIAL GENERAL LIABILITY (that is gl_each_occurrence) and again under UMBRELLA LIAB (that is umbrella_limit).
+- policy_expiration_date is the date in the POLICY EXP column on the General Liability row.
+- additional_insured is the DESCRIPTION OF OPERATIONS / LOCATIONS / VEHICLES block.
+- Omit any field you cannot see. A box in the wrong place is worse than a missing one.
+
+Return "page" as the 1-based page the value is on, and "box_2d" as [ymin, xmin, ymax, xmax], each 0-1000, normalized to that page's own width and height.`,
+        },
+      ],
+      config: {
+        temperature: 0,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            field_locations: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  field: { type: Type.STRING },
+                  page: { type: Type.NUMBER },
+                  box_2d: { type: Type.ARRAY, items: { type: Type.NUMBER } },
+                },
+              },
+            },
+          },
+          required: ["field_locations"],
+        },
+      },
+    });
+
+    const text = response.text;
+    if (!text) return { status: 200, body: { field_locations: [] } };
+    const parsed = normalizeFieldLocations(JSON.parse(text.trim()));
+    console.log(
+      `COI locate: ${parsed.field_locations.length} boxes in ${Date.now() - startedAt}ms`
+    );
+    return { status: 200, body: { field_locations: parsed.field_locations } };
+  } catch (err: any) {
+    // Never fail the reviewer's flow over a highlight.
+    console.warn("COI locate failed (highlights unavailable):", err?.message || err);
+    return { status: 200, body: { field_locations: [] } };
+  }
+}
+
 /** Parse a newline + pipe-delimited trade table into structured rows. */
 function parseTradeRulesText(text: unknown): any[] {
   if (typeof text !== "string" || !text.trim()) return [];

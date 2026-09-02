@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import dotenv from "dotenv";
-import { scanCoi, scanContract } from "./api/_scan";
+import { scanCoi, scanContract, locateCoiFields } from "./api/_scan";
 
 // Load .env first, then let .env.local override it. This matches Vite's own
 // env precedence and the README, which points users at .env.local for GEMINI_API_KEY.
@@ -23,6 +23,18 @@ async function startServer() {
     } catch (err: any) {
       console.error("Scanning Error:", err);
       res.status(500).json({ error: err.message || "COI document scanning failed." });
+    }
+  });
+
+  // Highlight positions — a separate best-effort pass, so a slow or failed
+  // locate never touches the scan the reviewer is actually waiting on.
+  app.post("/api/locate-coi", async (req, res) => {
+    try {
+      const result = await locateCoiFields(req.body);
+      res.status(result.status).json(result.body);
+    } catch (err: any) {
+      console.warn("Locate route error:", err?.message || err);
+      res.status(200).json({ field_locations: [] });
     }
   });
 

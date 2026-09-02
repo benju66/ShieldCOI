@@ -90,6 +90,46 @@ export default function VerificationDrawer({
   // Whole-certificate attestation. Reset per open, like every other control.
   const [attested, setAttested] = useState(false);
 
+  /**
+   * Highlight positions, fetched AFTER the drawer opens rather than as part of
+   * the scan. Bounding boxes are slow to produce and carry no compliance
+   * weight, so the reviewer sees the values immediately and the boxes land a
+   * moment later. A failure leaves this empty and the overlay falls back.
+   */
+  const [modelBoxes, setModelBoxes] = useState<{ field: string; page?: number; box_2d: number[] }[]>([]);
+
+  useEffect(() => {
+    if (!isOpen || !extractedData?.file_data) {
+      setModelBoxes([]);
+      return;
+    }
+    // Sandbox samples have no real document to point at.
+    if (extractedData.simulated) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/locate-coi", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileData: extractedData.file_data,
+            mimeType: extractedData.file_mime || "application/pdf",
+          }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data?.field_locations)) setModelBoxes(data.field_locations);
+      } catch {
+        /* Highlights are optional — never disturb the review over one. */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, extractedData?.file_data]);
+
   // Maintain local state representing editable payload if Manual Mode is active or during edit
   const [formData, setFormData] = useState<{
     insured_name: string;
@@ -356,7 +396,7 @@ export default function VerificationDrawer({
               fileData={activeData.file_data || ""}
               fileMime={activeData.file_mime || "image/png"}
               locations={ACORD25_FIELD_TEMPLATE}
-              modelLocations={activeData.field_locations}
+              modelLocations={modelBoxes.length > 0 ? modelBoxes : activeData.field_locations}
               templatePage={activeData.certificate_page}
               fieldStatus={fieldStatus}
               fieldLabels={fieldLabels}
